@@ -4,7 +4,7 @@ mod instructions;
 mod opcodes;
 
 use bitflags::bitflags;
-use emu_core::{Cpu as CpuTrait, EmulatorError, Result};
+use emu_core::{Cpu as CpuTrait, Result};
 
 bitflags! {
     /// CPU status flags
@@ -70,6 +70,12 @@ impl<M: CpuMemory> Cpu6502<M> {
             cycles: 0,
         }
     }
+
+    /// Get a reference to the memory interface
+    pub fn memory(&mut self) -> &mut M {
+        &mut self.memory
+    }
+
 
     /// Set a status flag
     #[inline]

@@ -19,6 +19,7 @@ pub enum AddressingMode {
 }
 
 /// Opcode information
+#[allow(dead_code)]
 pub struct OpcodeInfo {
     pub mnemonic: &'static str,
     pub mode: AddressingMode,
