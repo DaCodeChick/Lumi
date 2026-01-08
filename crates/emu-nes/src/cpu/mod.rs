@@ -138,6 +138,91 @@ impl<M: CpuMemory> Cpu6502<M> {
         self.pc = self.pc.wrapping_add(2);
         word
     }
+
+    // Addressing mode helpers (used by instructions)
+
+    /// Get address for Zero Page addressing (addr = $00nn)
+    #[inline]
+    pub(super) fn addr_zero_page(&mut self) -> u16 {
+        self.fetch_byte() as u16
+    }
+
+    /// Get address for Zero Page,X addressing (addr = $00nn + X)
+    #[inline]
+    pub(super) fn addr_zero_page_x(&mut self) -> u16 {
+        self.fetch_byte().wrapping_add(self.x) as u16
+    }
+
+    /// Get address for Zero Page,Y addressing (addr = $00nn + Y)
+    #[inline]
+    pub(super) fn addr_zero_page_y(&mut self) -> u16 {
+        self.fetch_byte().wrapping_add(self.y) as u16
+    }
+
+    /// Get address for Absolute addressing (addr = $nnnn)
+    #[inline]
+    pub(super) fn addr_absolute(&mut self) -> u16 {
+        self.fetch_word()
+    }
+
+    /// Get address for Absolute,X addressing (addr = $nnnn + X)
+    /// Returns (address, page_crossed)
+    #[inline]
+    pub(super) fn addr_absolute_x(&mut self) -> (u16, bool) {
+        let base = self.fetch_word();
+        let addr = base.wrapping_add(self.x as u16);
+        let page_crossed = (base & 0xFF00) != (addr & 0xFF00);
+        (addr, page_crossed)
+    }
+
+    /// Get address for Absolute,Y addressing (addr = $nnnn + Y)
+    /// Returns (address, page_crossed)
+    #[inline]
+    pub(super) fn addr_absolute_y(&mut self) -> (u16, bool) {
+        let base = self.fetch_word();
+        let addr = base.wrapping_add(self.y as u16);
+        let page_crossed = (base & 0xFF00) != (addr & 0xFF00);
+        (addr, page_crossed)
+    }
+
+    /// Get address for Indirect addressing (JMP only)
+    /// addr = contents of $nnnn
+    #[inline]
+    pub(super) fn addr_indirect(&mut self) -> u16 {
+        let ptr = self.fetch_word();
+        
+        // 6502 bug: if ptr is at page boundary (e.g. $xxFF),
+        // it wraps within the same page instead of crossing to next page
+        if ptr & 0xFF == 0xFF {
+            let lo = self.memory.read(ptr) as u16;
+            let hi = self.memory.read(ptr & 0xFF00) as u16;
+            (hi << 8) | lo
+        } else {
+            self.memory.read_word(ptr)
+        }
+    }
+
+    /// Get address for Indexed Indirect addressing (addr = contents of ($nn + X))
+    #[inline]
+    pub(super) fn addr_indexed_indirect(&mut self) -> u16 {
+        let ptr = self.fetch_byte().wrapping_add(self.x);
+        let lo = self.memory.read(ptr as u16) as u16;
+        let hi = self.memory.read(ptr.wrapping_add(1) as u16) as u16;
+        (hi << 8) | lo
+    }
+
+    /// Get address for Indirect Indexed addressing (addr = contents of ($nn) + Y)
+    /// Returns (address, page_crossed)
+    #[inline]
+    pub(super) fn addr_indirect_indexed(&mut self) -> (u16, bool) {
+        let ptr = self.fetch_byte();
+        let lo = self.memory.read(ptr as u16) as u16;
+        let hi = self.memory.read(ptr.wrapping_add(1) as u16) as u16;
+        let base = (hi << 8) | lo;
+        let addr = base.wrapping_add(self.y as u16);
+        let page_crossed = (base & 0xFF00) != (addr & 0xFF00);
+        (addr, page_crossed)
+    }
 }
 
 impl<M: CpuMemory> CpuTrait for Cpu6502<M> {
@@ -245,5 +330,377 @@ mod tests {
         
         cpu.set_flag(StatusFlags::ZERO, false);
         assert!(!cpu.get_flag(StatusFlags::ZERO));
+    }
+
+    #[test]
+    fn test_lda_immediate() {
+        let mut memory = TestMemory::new();
+        memory.ram[0] = 0xA9;  // LDA #$42
+        memory.ram[1] = 0x42;
+        
+        let mut cpu = Cpu6502::new(memory);
+        cpu.pc = 0;
+        
+        let cycles = cpu.step().unwrap();
+        
+        assert_eq!(cpu.a, 0x42);
+        assert_eq!(cpu.pc, 2);
+        assert_eq!(cycles, 2);
+        assert!(!cpu.get_flag(StatusFlags::ZERO));
+        assert!(!cpu.get_flag(StatusFlags::NEGATIVE));
+    }
+
+    #[test]
+    fn test_lda_zero_flag() {
+        let mut memory = TestMemory::new();
+        memory.ram[0] = 0xA9;  // LDA #$00
+        memory.ram[1] = 0x00;
+        
+        let mut cpu = Cpu6502::new(memory);
+        cpu.pc = 0;
+        
+        cpu.step().unwrap();
+        
+        assert_eq!(cpu.a, 0x00);
+        assert!(cpu.get_flag(StatusFlags::ZERO));
+        assert!(!cpu.get_flag(StatusFlags::NEGATIVE));
+    }
+
+    #[test]
+    fn test_lda_negative_flag() {
+        let mut memory = TestMemory::new();
+        memory.ram[0] = 0xA9;  // LDA #$FF
+        memory.ram[1] = 0xFF;
+        
+        let mut cpu = Cpu6502::new(memory);
+        cpu.pc = 0;
+        
+        cpu.step().unwrap();
+        
+        assert_eq!(cpu.a, 0xFF);
+        assert!(!cpu.get_flag(StatusFlags::ZERO));
+        assert!(cpu.get_flag(StatusFlags::NEGATIVE));
+    }
+
+    #[test]
+    fn test_adc_no_carry() {
+        let mut memory = TestMemory::new();
+        memory.ram[0] = 0xA9;  // LDA #$10
+        memory.ram[1] = 0x10;
+        memory.ram[2] = 0x69;  // ADC #$20
+        memory.ram[3] = 0x20;
+        
+        let mut cpu = Cpu6502::new(memory);
+        cpu.pc = 0;
+        
+        cpu.step().unwrap();  // LDA
+        cpu.step().unwrap();  // ADC
+        
+        assert_eq!(cpu.a, 0x30);
+        assert!(!cpu.get_flag(StatusFlags::CARRY));
+        assert!(!cpu.get_flag(StatusFlags::ZERO));
+        assert!(!cpu.get_flag(StatusFlags::OVERFLOW));
+    }
+
+    #[test]
+    fn test_adc_with_carry() {
+        let mut memory = TestMemory::new();
+        memory.ram[0] = 0xA9;  // LDA #$FF
+        memory.ram[1] = 0xFF;
+        memory.ram[2] = 0x69;  // ADC #$02
+        memory.ram[3] = 0x02;
+        
+        let mut cpu = Cpu6502::new(memory);
+        cpu.pc = 0;
+        
+        cpu.step().unwrap();  // LDA
+        cpu.step().unwrap();  // ADC
+        
+        assert_eq!(cpu.a, 0x01);
+        assert!(cpu.get_flag(StatusFlags::CARRY));
+    }
+
+    #[test]
+    fn test_sbc() {
+        let mut memory = TestMemory::new();
+        memory.ram[0] = 0xA9;  // LDA #$50
+        memory.ram[1] = 0x50;
+        memory.ram[2] = 0x38;  // SEC (set carry)
+        memory.ram[3] = 0xE9;  // SBC #$30
+        memory.ram[4] = 0x30;
+        
+        let mut cpu = Cpu6502::new(memory);
+        cpu.pc = 0;
+        
+        cpu.step().unwrap();  // LDA
+        cpu.step().unwrap();  // SEC
+        cpu.step().unwrap();  // SBC
+        
+        assert_eq!(cpu.a, 0x20);
+        assert!(cpu.get_flag(StatusFlags::CARRY));
+    }
+
+    #[test]
+    fn test_inc_dec() {
+        let mut memory = TestMemory::new();
+        memory.ram[0] = 0xA9;  // LDA #$10
+        memory.ram[1] = 0x10;
+        memory.ram[2] = 0x85;  // STA $20
+        memory.ram[3] = 0x20;
+        memory.ram[4] = 0xE6;  // INC $20
+        memory.ram[5] = 0x20;
+        memory.ram[6] = 0xA5;  // LDA $20
+        memory.ram[7] = 0x20;
+        memory.ram[8] = 0xC6;  // DEC $20
+        memory.ram[9] = 0x20;
+        memory.ram[10] = 0xA5; // LDA $20
+        memory.ram[11] = 0x20;
+        
+        let mut cpu = Cpu6502::new(memory);
+        cpu.pc = 0;
+        
+        cpu.step().unwrap();  // LDA #$10
+        cpu.step().unwrap();  // STA $20
+        
+        cpu.step().unwrap();  // INC $20
+        cpu.step().unwrap();  // LDA $20
+        assert_eq!(cpu.a, 0x11);
+        
+        cpu.step().unwrap();  // DEC $20
+        cpu.step().unwrap();  // LDA $20
+        assert_eq!(cpu.a, 0x10);
+    }
+
+    #[test]
+    fn test_inx_iny_dex_dey() {
+        let mut memory = TestMemory::new();
+        memory.ram[0] = 0xE8;  // INX
+        memory.ram[1] = 0xC8;  // INY
+        memory.ram[2] = 0xCA;  // DEX
+        memory.ram[3] = 0x88;  // DEY
+        
+        let mut cpu = Cpu6502::new(memory);
+        cpu.pc = 0;
+        
+        assert_eq!(cpu.x, 0);
+        assert_eq!(cpu.y, 0);
+        
+        cpu.step().unwrap();  // INX
+        assert_eq!(cpu.x, 1);
+        
+        cpu.step().unwrap();  // INY
+        assert_eq!(cpu.y, 1);
+        
+        cpu.step().unwrap();  // DEX
+        assert_eq!(cpu.x, 0);
+        
+        cpu.step().unwrap();  // DEY
+        assert_eq!(cpu.y, 0);
+    }
+
+    #[test]
+    fn test_transfer_instructions() {
+        let mut memory = TestMemory::new();
+        memory.ram[0] = 0xA9;  // LDA #$42
+        memory.ram[1] = 0x42;
+        memory.ram[2] = 0xAA;  // TAX
+        memory.ram[3] = 0xA8;  // TAY
+        memory.ram[4] = 0x8A;  // TXA
+        memory.ram[5] = 0x98;  // TYA
+        
+        let mut cpu = Cpu6502::new(memory);
+        cpu.pc = 0;
+        
+        cpu.step().unwrap();  // LDA
+        assert_eq!(cpu.a, 0x42);
+        
+        cpu.step().unwrap();  // TAX
+        assert_eq!(cpu.x, 0x42);
+        
+        cpu.a = 0x30;
+        cpu.step().unwrap();  // TAY
+        assert_eq!(cpu.y, 0x30);
+        
+        cpu.step().unwrap();  // TXA
+        assert_eq!(cpu.a, 0x42);
+        
+        cpu.step().unwrap();  // TYA
+        assert_eq!(cpu.a, 0x30);
+    }
+
+    #[test]
+    fn test_and_or_eor() {
+        let mut memory = TestMemory::new();
+        memory.ram[0] = 0xA9;  // LDA #$FF
+        memory.ram[1] = 0xFF;
+        memory.ram[2] = 0x29;  // AND #$0F
+        memory.ram[3] = 0x0F;
+        memory.ram[4] = 0x09;  // ORA #$F0
+        memory.ram[5] = 0xF0;
+        memory.ram[6] = 0x49;  // EOR #$AA
+        memory.ram[7] = 0xAA;
+        
+        let mut cpu = Cpu6502::new(memory);
+        cpu.pc = 0;
+        
+        cpu.step().unwrap();  // LDA
+        assert_eq!(cpu.a, 0xFF);
+        
+        cpu.step().unwrap();  // AND
+        assert_eq!(cpu.a, 0x0F);
+        
+        cpu.step().unwrap();  // ORA
+        assert_eq!(cpu.a, 0xFF);
+        
+        cpu.step().unwrap();  // EOR
+        assert_eq!(cpu.a, 0x55);
+    }
+
+    #[test]
+    fn test_asl_lsr() {
+        let mut memory = TestMemory::new();
+        memory.ram[0] = 0xA9;  // LDA #$80
+        memory.ram[1] = 0x80;
+        memory.ram[2] = 0x0A;  // ASL A
+        memory.ram[3] = 0x4A;  // LSR A
+        
+        let mut cpu = Cpu6502::new(memory);
+        cpu.pc = 0;
+        
+        cpu.step().unwrap();  // LDA
+        assert_eq!(cpu.a, 0x80);
+        
+        cpu.step().unwrap();  // ASL
+        assert_eq!(cpu.a, 0x00);
+        assert!(cpu.get_flag(StatusFlags::CARRY));
+        assert!(cpu.get_flag(StatusFlags::ZERO));
+        
+        cpu.a = 0x01;
+        cpu.set_flag(StatusFlags::CARRY, false);
+        cpu.step().unwrap();  // LSR
+        assert_eq!(cpu.a, 0x00);
+        assert!(cpu.get_flag(StatusFlags::CARRY));
+    }
+
+    #[test]
+    fn test_cmp() {
+        let mut memory = TestMemory::new();
+        memory.ram[0] = 0xA9;  // LDA #$50
+        memory.ram[1] = 0x50;
+        memory.ram[2] = 0xC9;  // CMP #$50 (equal)
+        memory.ram[3] = 0x50;
+        memory.ram[4] = 0xC9;  // CMP #$30 (greater)
+        memory.ram[5] = 0x30;
+        memory.ram[6] = 0xC9;  // CMP #$60 (less)
+        memory.ram[7] = 0x60;
+        
+        let mut cpu = Cpu6502::new(memory);
+        cpu.pc = 0;
+        
+        cpu.step().unwrap();  // LDA
+        
+        cpu.step().unwrap();  // CMP (equal)
+        assert!(cpu.get_flag(StatusFlags::CARRY));
+        assert!(cpu.get_flag(StatusFlags::ZERO));
+        
+        cpu.step().unwrap();  // CMP (greater)
+        assert!(cpu.get_flag(StatusFlags::CARRY));
+        assert!(!cpu.get_flag(StatusFlags::ZERO));
+        
+        cpu.step().unwrap();  // CMP (less)
+        assert!(!cpu.get_flag(StatusFlags::CARRY));
+        assert!(!cpu.get_flag(StatusFlags::ZERO));
+    }
+
+    #[test]
+    fn test_branch_not_taken() {
+        let mut memory = TestMemory::new();
+        memory.ram[0] = 0xD0;  // BNE (branch if not zero)
+        memory.ram[1] = 0x05;  // offset +5
+        
+        let mut cpu = Cpu6502::new(memory);
+        cpu.pc = 0;
+        cpu.set_flag(StatusFlags::ZERO, true);  // Z=1, so BNE not taken
+        
+        let cycles = cpu.step().unwrap();
+        
+        assert_eq!(cpu.pc, 2);  // Should advance normally
+        assert_eq!(cycles, 2);  // 2 cycles for branch not taken
+    }
+
+    #[test]
+    fn test_branch_taken_no_page_cross() {
+        let mut memory = TestMemory::new();
+        memory.ram[0] = 0xD0;  // BNE
+        memory.ram[1] = 0x05;  // offset +5
+        
+        let mut cpu = Cpu6502::new(memory);
+        cpu.pc = 0;
+        cpu.set_flag(StatusFlags::ZERO, false);  // Z=0, so BNE taken
+        
+        let cycles = cpu.step().unwrap();
+        
+        assert_eq!(cpu.pc, 7);  // PC=2 + offset 5 = 7
+        assert_eq!(cycles, 3);  // 3 cycles for branch taken without page cross
+    }
+
+    #[test]
+    fn test_jmp_absolute() {
+        let mut memory = TestMemory::new();
+        memory.ram[0] = 0x4C;  // JMP $1234
+        memory.ram[1] = 0x34;
+        memory.ram[2] = 0x12;
+        
+        let mut cpu = Cpu6502::new(memory);
+        cpu.pc = 0;
+        
+        cpu.step().unwrap();
+        
+        assert_eq!(cpu.pc, 0x1234);
+    }
+
+    #[test]
+    fn test_jsr_rts() {
+        let mut memory = TestMemory::new();
+        memory.ram[0x00] = 0x20;  // JSR $1000
+        memory.ram[0x01] = 0x00;
+        memory.ram[0x02] = 0x10;
+        memory.ram[0x1000] = 0x60;  // RTS
+        
+        let mut cpu = Cpu6502::new(memory);
+        cpu.pc = 0;
+        
+        cpu.step().unwrap();  // JSR
+        assert_eq!(cpu.pc, 0x1000);
+        assert_eq!(cpu.sp, 0xFB);  // SP decremented by 2
+        
+        cpu.step().unwrap();  // RTS
+        assert_eq!(cpu.pc, 0x03);  // Returns to next instruction after JSR
+        assert_eq!(cpu.sp, 0xFD);  // SP restored
+    }
+
+    #[test]
+    fn test_stack_push_pop() {
+        let mut memory = TestMemory::new();
+        memory.ram[0] = 0xA9;  // LDA #$42
+        memory.ram[1] = 0x42;
+        memory.ram[2] = 0x48;  // PHA
+        memory.ram[3] = 0xA9;  // LDA #$00
+        memory.ram[4] = 0x00;
+        memory.ram[5] = 0x68;  // PLA
+        
+        let mut cpu = Cpu6502::new(memory);
+        cpu.pc = 0;
+        
+        cpu.step().unwrap();  // LDA #$42
+        cpu.step().unwrap();  // PHA
+        assert_eq!(cpu.sp, 0xFC);
+        
+        cpu.step().unwrap();  // LDA #$00
+        assert_eq!(cpu.a, 0x00);
+        
+        cpu.step().unwrap();  // PLA
+        assert_eq!(cpu.a, 0x42);
+        assert_eq!(cpu.sp, 0xFD);
     }
 }
