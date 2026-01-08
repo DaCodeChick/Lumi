@@ -51,9 +51,10 @@ burn-wgpu = "0.14"            # GPU backend (Vulkan)
 burn-tch = "0.14"             # Optional: CUDA backend (future)
 burn-autodiff = "0.14"        # Automatic differentiation
 
-# ML - Python bridge (Phase 15+, optional)
-pyo3 = { version = "0.21", features = ["auto-initialize"], optional = true }
-numpy = { version = "0.21", optional = true }
+# ML - Python bridge (Phase 15+)
+# Note: These will be added as optional features in individual crates, not in workspace
+pyo3 = { version = "0.21", features = ["auto-initialize"] }
+numpy = "0.21"
 
 # Serialization
 serde = { version = "1.0", features = ["derive"] }
