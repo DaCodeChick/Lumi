@@ -1,0 +1,88 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/emu-core",
+    "crates/emu-nes",
+    "crates/audio-output",
+    "crates/memory-analyzer",
+    "crates/ai-agent",
+    "crates/feedback-writer",
+    "crates/input-handler",
+    "crates/ui",
+    "lumiemu",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+authors = ["DaCodeChick"]
+license = "LGPL-3.0"
+repository = "https://github.com/DaCodeChick/Lumi"
+
+[workspace.dependencies]
+# Internal crates
+emu-core = { path = "crates/emu-core" }
+emu-nes = { path = "crates/emu-nes" }
+audio-output = { path = "crates/audio-output" }
+memory-analyzer = { path = "crates/memory-analyzer" }
+ai-agent = { path = "crates/ai-agent" }
+feedback-writer = { path = "crates/feedback-writer" }
+input-handler = { path = "crates/input-handler" }
+ui = { path = "crates/ui" }
+
+# Emulation core
+bitflags = "2.4"
+byteorder = "1.5"
+
+# Audio
+cpal = "0.15"
+
+# UI
+slint = "1.5"
+
+# Input
+gilrs = "0.10"
+winit = "0.29"
+
+# ML - Rust (Burn)
+burn = "0.14"
+burn-ndarray = "0.14"         # CPU backend
+burn-wgpu = "0.14"            # GPU backend (Vulkan)
+burn-tch = "0.14"             # Optional: CUDA backend (future)
+burn-autodiff = "0.14"        # Automatic differentiation
+
+# ML - Python bridge (Phase 15+, optional)
+pyo3 = { version = "0.21", features = ["auto-initialize"], optional = true }
+numpy = { version = "0.21", optional = true }
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+serde_yaml = "0.9"
+
+# Error handling
+anyhow = "1.0"
+thiserror = "1.0"
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# CLI
+clap = { version = "4.5", features = ["derive"] }
+
+# Utilities
+crossbeam = "0.8"
+parking_lot = "0.12"
+rand = "0.8"
+
+# Testing
+criterion = "0.5"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+
+[profile.dev]
+opt-level = 1  # Slight optimization for dev builds (emulator performance)

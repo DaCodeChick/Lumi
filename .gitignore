@@ -19,3 +19,50 @@ target
 #  and can be added to the global gitignore or merged into this file.  For a more nuclear
 #  option (not recommended) you can uncomment the following to ignore the entire idea folder.
 #.idea/
+
+# LumiEmu Specific
+# ROM files (copyrighted content)
+roms/*.nes
+roms/*.smc
+roms/*.sfc
+!roms/.gitkeep
+
+# ML model weights and checkpoints
+*.pt
+*.pth
+*.onnx
+models/*.bin
+checkpoints/
+
+# Training and analysis output
+discoveries/
+logs/
+recordings/
+
+# Python virtual environments (for future Python bridge)
+venv/
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+.python-version
+
+# OS-specific
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+
+# IDE
+.vscode/
+.idea/
+
+# Audio/video output
+*.wav
+*.mp4
+*.avi
+
+# Temporary files
+*.tmp
+*.temp
