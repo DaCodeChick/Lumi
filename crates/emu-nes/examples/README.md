@@ -117,6 +117,48 @@ You can view the PPM file with:
 
 ---
 
+### Controller/Input Examples
+
+#### `generate_controller_test.rs`
+Generates a controller test ROM that reads button input and stores states in memory.
+
+```bash
+cargo run --example generate_controller_test -p emu-nes
+```
+
+Creates `controller_test.nes` - a ROM that:
+- Strobes the controller ($4016)
+- Reads 8 button states sequentially
+- Stores each button in memory ($00-$07):
+  - $00 = A button
+  - $01 = B button
+  - $02 = Select
+  - $03 = Start
+  - $04 = Up
+  - $05 = Down
+  - $06 = Left
+  - $07 = Right
+- Sets success flag at $10
+
+#### `controller_demo.rs`
+Demonstrates controller input functionality by pressing buttons and verifying the ROM reads them correctly.
+
+```bash
+# First generate the controller test ROM
+cargo run --example generate_controller_test -p emu-nes
+
+# Then run the demo
+cargo run --example controller_demo -p emu-nes
+```
+
+Shows:
+- Setting button states using the API
+- Running a ROM that reads controller input
+- Verifying correct button detection
+- Controller shift register behavior
+
+---
+
 ## Example Output
 
 ### CPU Test ROM
@@ -143,12 +185,39 @@ Colors:
   $0F RGB(  0,  0,  0):  49152 pixels  (Black)
 ```
 
+### Controller Demo
+```
+=== NES Controller Demo ===
+
+Loading controller_test.nes...
+Setting button states:
+  - Pressing A button
+  - Pressing Start button
+  - Pressing Up button
+
+Running ROM to read controller input...
+Success flag detected after 55 instructions
+
+Button states read from memory:
+  $00 (     A) = 1 [pressed] ✓
+  $01 (     B) = 0 [released] ✓
+  $02 (Select) = 0 [released] ✓
+  $03 ( Start) = 1 [pressed] ✓
+  $04 (    Up) = 1 [pressed] ✓
+  $05 (  Down) = 0 [released] ✓
+  $06 (  Left) = 0 [released] ✓
+  $07 ( Right) = 0 [released] ✓
+
+SUCCESS: All button states are correct!
+```
+
 ## Development Workflow
 
 1. **Test CPU functionality**: Run `cpu_demo` and `run_test_rom`
-2. **Generate visual content**: Run `generate_perfect_visual`
-3. **Verify rendering**: Run `render_perfect` and inspect the output image
-4. **Iterate**: Modify examples or add new ones to test specific features
+2. **Test controller input**: Run `generate_controller_test` and `controller_demo`
+3. **Generate visual content**: Run `generate_perfect_visual`
+4. **Verify rendering**: Run `render_perfect` and inspect the output image
+5. **Iterate**: Modify examples or add new ones to test specific features
 
 ## Notes
 

@@ -48,3 +48,67 @@ impl ControllerState {
         }
     }
 }
+
+/// NES controller hardware (handles shift register)
+#[derive(Debug, Clone)]
+pub struct Controller {
+    /// Current button state
+    state: ControllerState,
+    /// Shift register (buttons are read one at a time)
+    shift_register: u8,
+    /// Strobe mode (if true, continuously reload shift register)
+    strobe: bool,
+}
+
+impl Controller {
+    pub fn new() -> Self {
+        Self {
+            state: ControllerState::new(),
+            shift_register: 0,
+            strobe: false,
+        }
+    }
+
+    /// Write to $4016 (strobe)
+    pub fn write(&mut self, value: u8) {
+        let new_strobe = (value & 1) != 0;
+        
+        // Strobe falling edge: latch button states into shift register
+        if self.strobe && !new_strobe {
+            self.shift_register = self.state.buttons.bits();
+        }
+        
+        self.strobe = new_strobe;
+    }
+
+    /// Read from $4016 (shift out one button state)
+    pub fn read(&mut self) -> u8 {
+        if self.strobe {
+            // While strobing, always return A button state
+            self.state.buttons.bits() & 1
+        } else {
+            // Return lowest bit and shift right
+            let result = self.shift_register & 1;
+            self.shift_register >>= 1;
+            // Set bit 7 after shifting (open bus behavior)
+            self.shift_register |= 0x80;
+            result
+        }
+    }
+
+    /// Get current controller state (for external modification)
+    pub fn state(&mut self) -> &mut ControllerState {
+        &mut self.state
+    }
+
+    /// Get immutable controller state
+    pub fn state_ref(&self) -> &ControllerState {
+        &self.state
+    }
+}
+
+impl Default for Controller {
+    fn default() -> Self {
+        Self::new()
+    }
+}

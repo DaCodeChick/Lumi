@@ -15,7 +15,7 @@
 use crate::cpu::CpuMemory;
 use crate::cartridge::Cartridge;
 use crate::ppu::Ppu;
-use emu_core::{MemoryBus, MemoryObserver, EmulatorContext};
+use emu_core::{Controller, MemoryBus, MemoryObserver, EmulatorContext};
 
 /// NES Memory system
 pub struct NesMemory {
@@ -24,6 +24,12 @@ pub struct NesMemory {
     
     /// PPU (handles $2000-$2007 registers)
     ppu: Ppu,
+    
+    /// Controller 1
+    controller1: Controller,
+    
+    /// Controller 2
+    controller2: Controller,
     
     /// APU/IO register values (stubbed for now)
     apu_io_regs: [u8; 0x18],
@@ -44,6 +50,8 @@ impl NesMemory {
         Self {
             ram: [0; 0x0800],
             ppu: Ppu::new(),
+            controller1: Controller::new(),
+            controller2: Controller::new(),
             apu_io_regs: [0; 0x18],
             cartridge: None,
             observers: Vec::new(),
@@ -64,6 +72,16 @@ impl NesMemory {
     /// Get mutable PPU reference
     pub fn ppu_mut(&mut self) -> &mut Ppu {
         &mut self.ppu
+    }
+    
+    /// Get controller 1 reference
+    pub fn controller1(&mut self) -> &mut Controller {
+        &mut self.controller1
+    }
+    
+    /// Get controller 2 reference
+    pub fn controller2(&mut self) -> &mut Controller {
+        &mut self.controller2
     }
     
     /// Load a cartridge
@@ -107,8 +125,22 @@ impl NesMemory {
             
             // APU and I/O registers
             0x4000..=0x4017 => {
-                let reg = (addr - 0x4000) as usize;
-                self.apu_io_regs[reg]
+                match addr {
+                    0x4016 => {
+                        // Controller 1
+                        // Return bit 0 = controller data, bits 1-4 = open bus, bits 5-7 = 0
+                        self.controller1.read() | 0x40
+                    }
+                    0x4017 => {
+                        // Controller 2
+                        self.controller2.read() | 0x40
+                    }
+                    _ => {
+                        // Other APU/IO registers (stubbed)
+                        let reg = (addr - 0x4000) as usize;
+                        self.apu_io_regs[reg]
+                    }
+                }
             }
             
             // Cartridge space
@@ -140,9 +172,18 @@ impl NesMemory {
             
             // APU and I/O registers
             0x4000..=0x4017 => {
-                let reg = (addr - 0x4000) as usize;
-                self.apu_io_regs[reg] = value;
-                // TODO: Actually communicate with APU/IO
+                match addr {
+                    0x4016 => {
+                        // Controller strobe
+                        self.controller1.write(value);
+                        self.controller2.write(value);
+                    }
+                    _ => {
+                        // Other APU/IO registers (stubbed)
+                        let reg = (addr - 0x4000) as usize;
+                        self.apu_io_regs[reg] = value;
+                    }
+                }
             }
             
             // Cartridge space - writes to ROM are typically ignored

@@ -12,4 +12,4 @@ pub mod types;
 pub use error::{EmulatorError, Result};
 pub use memory_bus::{MemoryBus, MemoryObserver, MemoryAccess, AccessType, EmulatorContext};
 pub use traits::{Cpu, Emulator};
-pub use types::{Button, ControllerState};
+pub use types::{Button, Controller, ControllerState};

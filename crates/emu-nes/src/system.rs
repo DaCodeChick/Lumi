@@ -4,7 +4,7 @@
 
 use crate::{Cartridge, Cpu6502, NesMemory};
 use crate::cpu::CpuMemory;
-use emu_core::{Cpu, EmulatorError, Result};
+use emu_core::{Button, Controller, Cpu, EmulatorError, Result};
 use std::path::Path;
 
 /// NES Emulator System
@@ -130,6 +130,31 @@ impl NesSystem {
     /// Get PPU reference
     pub fn ppu(&mut self) -> &crate::ppu::Ppu {
         self.cpu.memory().ppu()
+    }
+    
+    /// Get controller 1 reference
+    pub fn controller1(&mut self) -> &mut Controller {
+        self.cpu.memory().controller1()
+    }
+    
+    /// Get controller 2 reference
+    pub fn controller2(&mut self) -> &mut Controller {
+        self.cpu.memory().controller2()
+    }
+    
+    /// Set controller 1 button state
+    pub fn set_button(&mut self, button: Button, pressed: bool) {
+        self.controller1().state().set(button, pressed);
+    }
+    
+    /// Press controller 1 button
+    pub fn press_button(&mut self, button: Button) {
+        self.controller1().state().press(button);
+    }
+    
+    /// Release controller 1 button
+    pub fn release_button(&mut self, button: Button) {
+        self.controller1().state().release(button);
     }
 }
 
