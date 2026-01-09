@@ -2,6 +2,8 @@ use std::sync::{Arc, Mutex};
 use std::collections::VecDeque;
 use std::thread;
 use std::time::{Duration, Instant};
+use std::rc::Rc;
+use std::cell::RefCell;
 use emu_nes::system::NesSystem;
 use emu_core::Button;
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
@@ -459,12 +461,34 @@ impl EmulatorApp {
             
             // Create memory viewer window
             let viewer = MemoryViewer::new().unwrap();
+            
+            // Initial population
+            {
+                let mut emu_lock = emulator_clone.lock().unwrap();
+                if let Some(ref mut system) = *emu_lock {
+                    let memory_text = Self::format_memory_dump(system);
+                    viewer.set_memory_text(memory_text.into());
+                } else {
+                    viewer.set_memory_text("No ROM loaded".into());
+                }
+            }
+            
             let viewer_weak = viewer.as_weak();
             let emulator_viewer = emulator_clone.clone();
             
-            // Set up a timer to update memory view
-            let timer = slint::Timer::default();
-            timer.start(slint::TimerMode::Repeated, std::time::Duration::from_millis(100), move || {
+            // Set up a timer to update memory view (wrapped in Rc to keep alive)
+            let timer = Rc::new(RefCell::new(slint::Timer::default()));
+            let timer_weak = Rc::downgrade(&timer);
+            
+            timer.borrow().start(slint::TimerMode::Repeated, std::time::Duration::from_millis(100), move || {
+                if viewer_weak.upgrade().is_none() {
+                    // Viewer closed, stop timer
+                    if let Some(t) = timer_weak.upgrade() {
+                        t.borrow().stop();
+                    }
+                    return;
+                }
+                
                 let mut emu_lock = emulator_viewer.lock().unwrap();
                 if let Some(ref mut system) = *emu_lock {
                     let memory_text = Self::format_memory_dump(system);
@@ -474,7 +498,11 @@ impl EmulatorApp {
                 }
             });
             
+            // Show the viewer
             viewer.show().unwrap();
+            
+            // Keep timer alive by forgetting the Rc
+            std::mem::forget(timer);
         });
     }
     
