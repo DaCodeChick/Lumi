@@ -46,10 +46,17 @@ impl AudioSystem {
             &config,
             move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
                 let mut buffer = buffer_clone.lock().unwrap();
+                let mut last_sample = 0.0;
                 
                 // Fill output buffer
                 for sample in data.iter_mut() {
-                    *sample = buffer.pop_front().unwrap_or(0.0);
+                    if let Some(s) = buffer.pop_front() {
+                        *sample = s;
+                        last_sample = s;
+                    } else {
+                        // Buffer underrun - repeat last sample to avoid clicking
+                        *sample = last_sample;
+                    }
                 }
             },
             move |err| {
@@ -100,6 +107,8 @@ impl EmulatorApp {
     }
 
     fn setup_callbacks(window: &MainWindow, emulator: Arc<Mutex<Option<NesSystem>>>) {
+        // Shared flag to control whether emulation thread is running
+        let running = Arc::new(Mutex::new(false));
         // Load ROM callback
         let emulator_clone = emulator.clone();
         let window_weak = window.as_weak();
@@ -141,6 +150,7 @@ impl EmulatorApp {
         // Start emulation callback
         let emulator_clone = emulator.clone();
         let window_weak = window.as_weak();
+        let running_clone = running.clone();
         window.on_start_emulation(move || {
             println!("Start emulation clicked");
             
@@ -151,6 +161,16 @@ impl EmulatorApp {
             }
             drop(emu_lock);
 
+            // Check if already running
+            {
+                let mut running_lock = running_clone.lock().unwrap();
+                if *running_lock {
+                    println!("Emulation already running");
+                    return;
+                }
+                *running_lock = true;
+            }
+
             println!("Starting emulation thread...");
 
             // Set running state
@@ -160,6 +180,7 @@ impl EmulatorApp {
 
             let emulator_thread = emulator_clone.clone();
             let window_weak_clone = window_weak.clone();
+            let running_thread = running_clone.clone();
 
             thread::spawn(move || {
                 println!("Emulation thread started");
@@ -186,6 +207,15 @@ impl EmulatorApp {
                 let mut audio_buffer = Vec::with_capacity(SAMPLES_PER_FRAME);
 
                 loop {
+                    // Check if we should continue running
+                    {
+                        let running_lock = running_thread.lock().unwrap();
+                        if !*running_lock {
+                            println!("Emulation stopped by user");
+                            break;
+                        }
+                    }
+                    
                     let frame_start = Instant::now();
 
                     // Run one frame, collect audio samples, and get framebuffer
@@ -195,24 +225,17 @@ impl EmulatorApp {
                             audio_buffer.clear();
                             
                             // Run for one frame (29780 CPU cycles ≈ 1/60th second)
-                            // We need 735 audio samples, so sample every ~40.5 cycles
+                            // We need 735 audio samples, so run in 735 chunks
                             const CYCLES_PER_FRAME: u64 = 29780;
-                            let cycles_per_sample = CYCLES_PER_FRAME as f64 / SAMPLES_PER_FRAME as f64;
+                            let cycles_per_sample = CYCLES_PER_FRAME / SAMPLES_PER_FRAME as u64; // ~40 cycles
                             
-                            let mut cycles_run = 0u64;
-                            let mut next_sample_at = 0.0;
-                            
-                            // Run frame in chunks, sampling audio periodically
-                            while cycles_run < CYCLES_PER_FRAME {
-                                // Determine how many cycles to run until next sample
-                                let cycles_to_run = if cycles_run as f64 >= next_sample_at {
-                                    // Time to sample - collect sample and continue
-                                    audio_buffer.push(system.audio_sample());
-                                    next_sample_at += cycles_per_sample;
-                                    1 // Run at least 1 cycle
+                            for i in 0..SAMPLES_PER_FRAME {
+                                // Run cycles for this sample period
+                                let cycles_to_run = if i == SAMPLES_PER_FRAME - 1 {
+                                    // Last sample - run remaining cycles
+                                    CYCLES_PER_FRAME - (cycles_per_sample * i as u64)
                                 } else {
-                                    // Run until next sample time
-                                    ((next_sample_at - cycles_run as f64).ceil() as u64).min(CYCLES_PER_FRAME - cycles_run)
+                                    cycles_per_sample
                                 };
                                 
                                 if let Err(e) = system.run_cycles(cycles_to_run) {
@@ -220,11 +243,7 @@ impl EmulatorApp {
                                     return;
                                 }
                                 
-                                cycles_run += cycles_to_run;
-                            }
-                            
-                            // Collect any remaining samples to reach exactly 735
-                            while audio_buffer.len() < SAMPLES_PER_FRAME {
+                                // Sample audio after running cycles
                                 audio_buffer.push(system.audio_sample());
                             }
 
@@ -306,12 +325,16 @@ impl EmulatorApp {
         });
 
         // Stop emulator callback
-        let emulator_clone = emulator.clone();
         let window_weak = window.as_weak();
+        let running_clone = running.clone();
         window.on_stop_emulation(move || {
             println!("Stop emulation clicked");
-            let mut emu_lock = emulator_clone.lock().unwrap();
-            *emu_lock = None;
+            
+            // Set running flag to false (keeps ROM loaded)
+            {
+                let mut running_lock = running_clone.lock().unwrap();
+                *running_lock = false;
+            }
             
             // Clear the screen and update UI state
             if let Some(window) = window_weak.upgrade() {
@@ -328,7 +351,7 @@ impl EmulatorApp {
                 window.set_screen_image(image);
                 window.set_fps_text("FPS: 0".into());
             }
-            println!("Emulation stopped");
+            println!("Emulation stopped (ROM still loaded)");
         });
 
         // Keyboard press handler
