@@ -33,6 +33,11 @@ roms/*.sfc
 /*.ppm
 /*.png
 
+# Compiled binaries from example generators
+gen_*
+!gen_*.rs
+!gen_*.md
+
 # ML model weights and checkpoints
 *.pt
 *.pth
