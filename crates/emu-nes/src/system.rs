@@ -42,6 +42,11 @@ impl NesSystem {
         })
     }
     
+    /// Load a ROM from a file path (convenience method)
+    pub fn load<P: AsRef<Path>>(path: P) -> Result<Self> {
+        Self::new(path.as_ref())
+    }
+    
     /// Create a NES system with raw PRG-ROM data (for testing)
     pub fn with_prg_rom(prg_rom: Vec<u8>) -> Result<Self> {
         let mut memory = NesMemory::new();

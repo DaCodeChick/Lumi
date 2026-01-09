@@ -360,6 +360,14 @@ impl Ppu {
     
     /// Tick the PPU by one cycle
     pub fn tick(&mut self) {
+        // Visible scanlines: 0-239
+        if self.scanline < 240 && self.is_rendering() {
+            // Render pixel at current position
+            if self.cycle > 0 && self.cycle <= 256 {
+                self.render_pixel();
+            }
+        }
+        
         // Advance cycle
         self.cycle += 1;
         
@@ -389,6 +397,198 @@ impl Ppu {
             self.status.remove(PpuStatus::SPRITE_ZERO_HIT);
             self.status.remove(PpuStatus::SPRITE_OVERFLOW);
             self.nmi_interrupt = false;
+        }
+    }
+    
+    /// Render a single pixel at the current scanline/cycle position
+    fn render_pixel(&mut self) {
+        let x = (self.cycle - 1) as usize;
+        let y = self.scanline as usize;
+        
+        if x >= 256 || y >= 240 {
+            return;
+        }
+        
+        let pixel_index = y * 256 + x;
+        
+        // Get background pixel
+        let bg_pixel = if self.mask.contains(PpuMask::SHOW_BG) {
+            self.get_background_pixel(x, y)
+        } else {
+            0 // Universal background color
+        };
+        
+        // Get sprite pixel (to be implemented)
+        let sprite_pixel = if self.mask.contains(PpuMask::SHOW_SPRITES) {
+            self.get_sprite_pixel(x, y)
+        } else {
+            (0, false, false)
+        };
+        
+        // Combine background and sprite with priority
+        let palette_index = if sprite_pixel.1 && (sprite_pixel.2 || bg_pixel & 0x03 == 0) {
+            // Sprite is visible and has priority (or BG is transparent)
+            sprite_pixel.0
+        } else {
+            bg_pixel
+        };
+        
+        self.framebuffer[pixel_index] = palette_index;
+    }
+    
+    /// Get background pixel color at screen position (x, y)
+    fn get_background_pixel(&self, x: usize, y: usize) -> u8 {
+        // Calculate nametable coordinates
+        let scroll_x = x; // Simplified, should use fine_x and vram_addr
+        let scroll_y = y;
+        
+        // Get tile coordinates (each tile is 8x8 pixels)
+        let tile_x = scroll_x / 8;
+        let tile_y = scroll_y / 8;
+        
+        // Get pixel within tile
+        let pixel_x = scroll_x % 8;
+        let pixel_y = scroll_y % 8;
+        
+        // Get nametable base address from PPUCTRL
+        let nametable_base = 0x2000 | ((self.ctrl.bits() as u16 & 0x03) << 10);
+        
+        // Calculate nametable address for this tile
+        let tile_addr = nametable_base + (tile_y * 32 + tile_x) as u16;
+        let tile_index = self.read_vram_direct(tile_addr);
+        
+        // Get attribute byte (determines palette for 2x2 tile group)
+        let attr_addr = nametable_base + 0x03C0 + ((tile_y / 4) * 8 + tile_x / 4) as u16;
+        let attr_byte = self.read_vram_direct(attr_addr);
+        
+        // Extract 2-bit palette index for this tile
+        let attr_shift = ((tile_y % 4) / 2) * 4 + ((tile_x % 4) / 2) * 2;
+        let palette_high = (attr_byte >> attr_shift) & 0x03;
+        
+        // Get pattern table address (CHR-ROM)
+        let pattern_table_base = if self.ctrl.contains(PpuCtrl::BG_PATTERN) {
+            0x1000
+        } else {
+            0x0000
+        };
+        
+        // Each tile is 16 bytes: 8 bytes for low bit plane, 8 bytes for high bit plane
+        let tile_addr = pattern_table_base + (tile_index as u16) * 16;
+        
+        // Read bit planes for this pixel row
+        let low_byte = self.chr_rom.get((tile_addr + pixel_y as u16) as usize).copied().unwrap_or(0);
+        let high_byte = self.chr_rom.get((tile_addr + 8 + pixel_y as u16) as usize).copied().unwrap_or(0);
+        
+        // Extract pixel color (2 bits: high bit from high_byte, low bit from low_byte)
+        let bit_pos = 7 - pixel_x;
+        let pixel_low = (low_byte >> bit_pos) & 0x01;
+        let pixel_high = (high_byte >> bit_pos) & 0x01;
+        let pixel_value = (pixel_high << 1) | pixel_low;
+        
+        // Combine with palette index
+        if pixel_value == 0 {
+            // Transparent - use universal background color
+            self.palette[0]
+        } else {
+            // Use background palette
+            let palette_addr = (palette_high * 4 + pixel_value) as usize;
+            self.palette[palette_addr]
+        }
+    }
+    
+    /// Get sprite pixel at screen position (x, y)
+    /// Returns (palette_index, is_visible, has_priority)
+    fn get_sprite_pixel(&self, x: usize, y: usize) -> (u8, bool, bool) {
+        // Check all 64 sprites in OAM
+        for sprite_idx in 0..64 {
+            let oam_offset = sprite_idx * 4;
+            
+            let sprite_y = self.oam[oam_offset] as usize;
+            let tile_index = self.oam[oam_offset + 1];
+            let attributes = self.oam[oam_offset + 2];
+            let sprite_x = self.oam[oam_offset + 3] as usize;
+            
+            // Sprite height (8 or 16 pixels)
+            let sprite_height = if self.ctrl.contains(PpuCtrl::SPRITE_SIZE) {
+                16
+            } else {
+                8
+            };
+            
+            // Check if pixel is within sprite bounds
+            let sprite_y_end = sprite_y.wrapping_add(sprite_height);
+            if y < sprite_y || y >= sprite_y_end || x < sprite_x || x >= sprite_x + 8 {
+                continue;
+            }
+            
+            // Calculate pixel position within sprite
+            let mut pixel_x = (x - sprite_x) as u8;
+            let mut pixel_y = (y - sprite_y) as u8;
+            
+            // Handle horizontal flip
+            if attributes & 0x40 != 0 {
+                pixel_x = 7 - pixel_x;
+            }
+            
+            // Handle vertical flip
+            if attributes & 0x80 != 0 {
+                pixel_y = (sprite_height as u8 - 1) - pixel_y;
+            }
+            
+            // Get pattern table address
+            let pattern_table_base = if self.ctrl.contains(PpuCtrl::SPRITE_PATTERN) {
+                0x1000
+            } else {
+                0x0000
+            };
+            
+            // Calculate tile address
+            let tile_addr = pattern_table_base + (tile_index as u16) * 16;
+            
+            // Read bit planes
+            let low_byte = self.chr_rom.get((tile_addr + pixel_y as u16) as usize).copied().unwrap_or(0);
+            let high_byte = self.chr_rom.get((tile_addr + 8 + pixel_y as u16) as usize).copied().unwrap_or(0);
+            
+            // Extract pixel value
+            let bit_pos = 7 - pixel_x;
+            let pixel_low = (low_byte >> bit_pos) & 0x01;
+            let pixel_high = (high_byte >> bit_pos) & 0x01;
+            let pixel_value = (pixel_high << 1) | pixel_low;
+            
+            // If pixel is transparent, skip this sprite
+            if pixel_value == 0 {
+                continue;
+            }
+            
+            // Get palette index (sprites use palettes 4-7)
+            let palette_num = attributes & 0x03;
+            let palette_addr = (0x10 + palette_num * 4 + pixel_value) as usize;
+            let palette_index = self.palette[palette_addr];
+            
+            // Check priority (0 = in front of BG, 1 = behind BG)
+            let behind_bg = attributes & 0x20 != 0;
+            
+            return (palette_index, true, !behind_bg);
+        }
+        
+        // No sprite pixel found
+        (0, false, false)
+    }
+    
+    /// Read from VRAM without side effects (for rendering)
+    fn read_vram_direct(&self, addr: u16) -> u8 {
+        let addr = addr & 0x3FFF;
+        match addr {
+            0x0000..=0x1FFF => self.chr_rom.get(addr as usize).copied().unwrap_or(0),
+            0x2000..=0x3EFF => {
+                let mirror_addr = self.mirror_nametable(addr);
+                self.vram[mirror_addr]
+            }
+            0x3F00..=0x3FFF => {
+                let palette_addr = (addr - 0x3F00) & 0x1F;
+                self.palette[palette_addr as usize]
+            }
+            _ => 0,
         }
     }
     
