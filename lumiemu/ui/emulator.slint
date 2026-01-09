@@ -16,72 +16,10 @@ export component MainWindow inherits Window {
     callback key-pressed(string);
     callback key-released(string);
     
-    VerticalBox {
-        padding: 10px;
-        spacing: 10px;
-        
-        // Menu bar
-        HorizontalBox {
-            spacing: 10px;
-            
-            Button {
-                text: "Load ROM";
-                clicked => { root.load-rom(); }
-            }
-            
-            Button {
-                text: emulator-running ? "Stop" : "Start";
-                enabled: rom-path != "";
-                clicked => {
-                    if (emulator-running) {
-                        root.stop-emulation();
-                    } else {
-                        root.start-emulation();
-                    }
-                }
-            }
-            
-            Text {
-                text: rom-path != "" ? "ROM: " + rom-path : "No ROM loaded";
-                vertical-alignment: center;
-            }
-            
-            Rectangle {
-                horizontal-stretch: 1;
-            }
-            
-            Text {
-                text: fps-text;
-                vertical-alignment: center;
-            }
-        }
-        
-        // Emulator screen
-        Rectangle {
-            border-width: 2px;
-            border-color: #808080;
-            background: #000000;
-            horizontal-stretch: 1;
-            vertical-stretch: 1;
-            
-            Image {
-                source: screen-image;
-                width: 100%;
-                height: 100%;
-                image-fit: contain;
-            }
-        }
-        
-        // Controls info
-        Text {
-            text: "Controls: Arrow Keys = D-Pad | Z = A | X = B | Enter = Start | Shift = Select";
-            font-size: 12px;
-            color: #808080;
-        }
-    }
+    // Keyboard handling at window level
+    forward-focus: focus-scope;
     
-    // Keyboard handling
-    FocusScope {
+    focus-scope := FocusScope {
         key-pressed(event) => {
             root.key-pressed(event.text);
             return accept;
@@ -90,6 +28,72 @@ export component MainWindow inherits Window {
         key-released(event) => {
             root.key-released(event.text);
             return accept;
+        }
+        
+        VerticalBox {
+            padding: 10px;
+            spacing: 10px;
+            
+            // Menu bar
+            HorizontalBox {
+                spacing: 10px;
+                
+                Button {
+                    text: "Load ROM";
+                    clicked => { 
+                        root.load-rom();
+                    }
+                }
+                
+                Button {
+                    text: emulator-running ? "Stop" : "Start";
+                    enabled: rom-path != "";
+                    clicked => {
+                        if (emulator-running) {
+                            root.stop-emulation();
+                        } else {
+                            root.start-emulation();
+                        }
+                    }
+                }
+                
+                Text {
+                    text: rom-path != "" ? "ROM: " + rom-path : "No ROM loaded";
+                    vertical-alignment: center;
+                }
+                
+                Rectangle {
+                    horizontal-stretch: 1;
+                }
+                
+                Text {
+                    text: fps-text;
+                    vertical-alignment: center;
+                }
+            }
+            
+            // Emulator screen
+            Rectangle {
+                border-width: 2px;
+                border-color: #808080;
+                background: #000000;
+                horizontal-stretch: 1;
+                vertical-stretch: 1;
+                
+                Image {
+                    source: screen-image;
+                    width: 100%;
+                    height: 100%;
+                    image-fit: contain;
+                }
+            }
+            
+            // Controls info
+            Text {
+                text: "Controls: Arrow Keys = D-Pad | Z = A | X = B | Enter = Start | Space = Select";
+                font-size: 12px;
+                color: #808080;
+            }
         }
     }
 }

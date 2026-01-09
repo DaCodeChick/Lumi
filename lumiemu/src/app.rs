@@ -28,21 +28,36 @@ impl EmulatorApp {
         let emulator_clone = emulator.clone();
         let window_weak = window.as_weak();
         window.on_load_rom(move || {
-            if let Ok(Some(path)) = native_dialog::FileDialog::new()
+            println!("Load ROM button clicked");
+            
+            match native_dialog::FileDialog::new()
                 .add_filter("NES ROM", &["nes"])
                 .show_open_single_file()
             {
-                let mut emu_lock = emulator_clone.lock().unwrap();
-                match NesSystem::new(&path) {
-                    Ok(system) => {
-                        *emu_lock = Some(system);
-                        if let Some(window) = window_weak.upgrade() {
-                            window.set_rom_path(path.to_string_lossy().into_owned().into());
+                Ok(Some(path)) => {
+                    println!("Selected file: {:?}", path);
+                    
+                    let mut emu_lock = emulator_clone.lock().unwrap();
+                    match NesSystem::new(&path) {
+                        Ok(system) => {
+                            println!("ROM loaded successfully!");
+                            *emu_lock = Some(system);
+                            if let Some(window) = window_weak.upgrade() {
+                                let path_str = path.to_string_lossy().into_owned();
+                                window.set_rom_path(path_str.into());
+                                println!("ROM path set in UI");
+                            }
+                        }
+                        Err(e) => {
+                            eprintln!("Failed to load ROM: {:?}", e);
                         }
                     }
-                    Err(e) => {
-                        eprintln!("Failed to load ROM: {:?}", e);
-                    }
+                }
+                Ok(None) => {
+                    println!("File dialog cancelled");
+                }
+                Err(e) => {
+                    eprintln!("File dialog error: {:?}", e);
                 }
             }
         });
@@ -51,11 +66,16 @@ impl EmulatorApp {
         let emulator_clone = emulator.clone();
         let window_weak = window.as_weak();
         window.on_start_emulation(move || {
+            println!("Start emulation clicked");
+            
             let emu_lock = emulator_clone.lock().unwrap();
             if emu_lock.is_none() {
+                println!("No ROM loaded, cannot start");
                 return;
             }
             drop(emu_lock);
+
+            println!("Starting emulation thread...");
 
             // Set running state
             if let Some(window) = window_weak.upgrade() {
@@ -66,6 +86,7 @@ impl EmulatorApp {
             let window_weak_clone = window_weak.clone();
 
             thread::spawn(move || {
+                println!("Emulation thread started");
                 let target_fps = 60.0;
                 let frame_duration = Duration::from_secs_f64(1.0 / target_fps);
                 let mut frame_count = 0;
@@ -74,53 +95,55 @@ impl EmulatorApp {
                 loop {
                     let frame_start = Instant::now();
 
-                    // Check if we should stop
-                    let should_continue = {
-                        let emu_lock = emulator_thread.lock().unwrap();
-                        emu_lock.is_some()
-                    };
-
-                    if !should_continue {
-                        break;
-                    }
-
-                    // Run one frame
-                    {
+                    // Run one frame and get framebuffer
+                    let (should_continue, rgba_data) = {
                         let mut emu_lock = emulator_thread.lock().unwrap();
                         if let Some(ref mut system) = *emu_lock {
                             // Run for one frame (29780 CPU cycles ≈ 1/60th second)
                             if let Err(e) = system.run_cycles(29780) {
                                 eprintln!("Emulation error: {:?}", e);
-                                break;
+                                return;
                             }
 
                             // Convert framebuffer to image
                             let framebuffer = system.framebuffer();
                             let rgba_data = Self::framebuffer_to_rgba(framebuffer);
                             
-                            // Update display
-                            if let Some(window) = window_weak_clone.upgrade() {
-                                let buffer = slint::SharedPixelBuffer::clone_from_slice(
-                                    &rgba_data,
-                                    256,
-                                    240,
-                                );
-                                let image = slint::Image::from_rgba8(buffer);
-                                window.set_screen_image(image);
-                            } else {
-                                break;
-                            }
+                            (true, rgba_data)
                         } else {
-                            break;
+                            println!("Emulator stopped");
+                            return;
                         }
+                    };
+
+                    if !should_continue {
+                        break;
                     }
+
+                    // Update display on UI thread
+                    let window_weak_update = window_weak_clone.clone();
+                    slint::invoke_from_event_loop(move || {
+                        if let Some(window) = window_weak_update.upgrade() {
+                            let buffer = slint::SharedPixelBuffer::clone_from_slice(
+                                &rgba_data,
+                                256,
+                                240,
+                            );
+                            let image = slint::Image::from_rgba8(buffer);
+                            window.set_screen_image(image);
+                        }
+                    }).ok();
 
                     // FPS calculation
                     frame_count += 1;
                     if fps_timer.elapsed() >= Duration::from_secs(1) {
-                        if let Some(window) = window_weak_clone.upgrade() {
-                            window.set_fps_text(format!("FPS: {}", frame_count).into());
-                        }
+                        let fps = frame_count;
+                        let window_weak_fps = window_weak_clone.clone();
+                        slint::invoke_from_event_loop(move || {
+                            if let Some(window) = window_weak_fps.upgrade() {
+                                window.set_fps_text(format!("FPS: {}", fps).into());
+                            }
+                        }).ok();
                         frame_count = 0;
                         fps_timer = Instant::now();
                     }
@@ -132,18 +155,30 @@ impl EmulatorApp {
                     }
                 }
 
+                println!("Emulation thread ended");
+                
                 // Clear running state when stopped
-                if let Some(window) = window_weak_clone.upgrade() {
-                    window.set_emulator_running(false);
-                }
+                slint::invoke_from_event_loop(move || {
+                    if let Some(window) = window_weak_clone.upgrade() {
+                        window.set_emulator_running(false);
+                    }
+                }).ok();
             });
         });
 
         // Stop emulator callback
         let emulator_clone = emulator.clone();
+        let window_weak = window.as_weak();
         window.on_stop_emulation(move || {
+            println!("Stop emulation clicked");
             let mut emu_lock = emulator_clone.lock().unwrap();
             *emu_lock = None;
+            
+            // Update UI state immediately
+            if let Some(window) = window_weak.upgrade() {
+                window.set_emulator_running(false);
+            }
+            println!("Emulation stopped");
         });
 
         // Keyboard press handler
