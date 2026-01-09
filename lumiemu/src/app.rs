@@ -462,16 +462,34 @@ impl EmulatorApp {
             // Create memory viewer window
             let viewer = MemoryViewer::new().unwrap();
             
+            // Track current region
+            let current_region = Rc::new(RefCell::new(0i32));
+            
             // Initial population
             {
                 let mut emu_lock = emulator_clone.lock().unwrap();
                 if let Some(ref mut system) = *emu_lock {
-                    let memory_text = Self::format_memory_dump(system);
+                    let memory_text = Self::format_memory_region(system, 0);
                     viewer.set_memory_text(memory_text.into());
                 } else {
                     viewer.set_memory_text("No ROM loaded".into());
                 }
             }
+            
+            // Handle region changes
+            let viewer_weak_region = viewer.as_weak();
+            let emulator_region = emulator_clone.clone();
+            let current_region_clone = current_region.clone();
+            viewer.on_region_changed(move |index| {
+                *current_region_clone.borrow_mut() = index;
+                let mut emu_lock = emulator_region.lock().unwrap();
+                if let Some(ref mut system) = *emu_lock {
+                    let memory_text = Self::format_memory_region(system, index);
+                    if let Some(v) = viewer_weak_region.upgrade() {
+                        v.set_memory_text(memory_text.into());
+                    }
+                }
+            });
             
             let viewer_weak = viewer.as_weak();
             let emulator_viewer = emulator_clone.clone();
@@ -491,7 +509,8 @@ impl EmulatorApp {
                 
                 let mut emu_lock = emulator_viewer.lock().unwrap();
                 if let Some(ref mut system) = *emu_lock {
-                    let memory_text = Self::format_memory_dump(system);
+                    let region = *current_region.borrow();
+                    let memory_text = Self::format_memory_region(system, region);
                     if let Some(v) = viewer_weak.upgrade() {
                         v.set_memory_text(memory_text.into());
                     }
@@ -506,53 +525,59 @@ impl EmulatorApp {
         });
     }
     
-    /// Format memory as hex dump
-    fn format_memory_dump(system: &mut NesSystem) -> String {
-        let mut output = String::with_capacity(80 * 256); // ~20KB pre-allocated
+    /// Get memory region bounds from index
+    fn get_region_bounds(index: i32) -> (u16, u16, &'static str) {
+        match index {
+            0 => (0x0100, 0x0200, "Stack"),
+            1 => (0x0000, 0x0800, "RAM"),
+            2 => (0x2000, 0x2008, "PPU Registers"),
+            3 => (0x4000, 0x4018, "APU & I/O"),
+            4 => (0x4020, 0x6000, "Expansion ROM"),
+            5 => (0x6000, 0x8000, "SRAM"),
+            6 => (0x8000, 0xA000, "PRG-ROM Bank 0"),
+            7 => (0xA000, 0xC000, "PRG-ROM Bank 1"),
+            8 => (0xC000, 0xE000, "PRG-ROM Bank 2"),
+            9 => (0xE000, 0xFFFF, "PRG-ROM Bank 3"),
+            _ => (0x0100, 0x0200, "Stack"),
+        }
+    }
+    
+    /// Format memory region as hex dump
+    fn format_memory_region(system: &mut NesSystem, region_index: i32) -> String {
+        let (start, end, name) = Self::get_region_bounds(region_index);
+        let mut output = String::with_capacity(80 * ((end - start) as usize / 16 + 10));
         
-        // Show key memory regions
-        let regions = [
-            (0x0000, 0x0800, "RAM"),
-            (0x2000, 0x2008, "PPU Registers"),
-            (0x4000, 0x4018, "APU & I/O"),
-            (0x6000, 0x6100, "PRG-RAM (first 256 bytes)"),
-            (0x8000, 0x8100, "PRG-ROM (first 256 bytes)"),
-            (0xFFFA, 0x10000, "Interrupt Vectors"),
-        ];
+        output.push_str(&format!("=== {} (${:04X}-${:04X}) ===\n\n", name, start, end - 1));
         
-        for (start, end, name) in regions {
-            output.push_str(&format!("\n=== {} (${}:{}) ===\n", name, format!("{:04X}", start), format!("{:04X}", end - 1)));
+        for addr in (start..end).step_by(16) {
+            output.push_str(&format!("{:04X}: ", addr));
             
-            for addr in (start..end).step_by(16) {
-                output.push_str(&format!("{:04X}: ", addr));
-                
-                // Hex bytes
-                for i in 0..16 {
-                    if addr + i < end {
-                        let byte = system.read_memory((addr + i) as u16);
-                        output.push_str(&format!("{:02X} ", byte));
-                    } else {
-                        output.push_str("   ");
-                    }
+            // Hex bytes
+            for i in 0..16 {
+                if addr + i < end {
+                    let byte = system.read_memory(addr + i);
+                    output.push_str(&format!("{:02X} ", byte));
+                } else {
+                    output.push_str("   ");
                 }
-                
-                output.push_str(" | ");
-                
-                // ASCII representation
-                for i in 0..16 {
-                    if addr + i < end {
-                        let byte = system.read_memory((addr + i) as u16);
-                        let ch = if byte >= 32 && byte < 127 {
-                            byte as char
-                        } else {
-                            '.'
-                        };
-                        output.push(ch);
-                    }
-                }
-                
-                output.push('\n');
             }
+            
+            output.push_str(" | ");
+            
+            // ASCII representation
+            for i in 0..16 {
+                if addr + i < end {
+                    let byte = system.read_memory(addr + i);
+                    let ch = if byte >= 32 && byte < 127 {
+                        byte as char
+                    } else {
+                        '.'
+                    };
+                    output.push(ch);
+                }
+            }
+            
+            output.push('\n');
         }
         
         output
