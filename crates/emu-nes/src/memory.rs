@@ -98,7 +98,19 @@ impl NesMemory {
     /// Load a cartridge
     pub fn load_cartridge(&mut self, cartridge: Cartridge) {
         // Load CHR-ROM into PPU
-        self.ppu.load_chr_rom(cartridge.chr_rom().to_vec());
+        // For mappers with CHR banking (like mapper 66), only load the first bank
+        if cartridge.header().mapper == 66 {
+            // Load only first 8KB bank for mapper 66
+            let chr_bank_0 = if cartridge.chr_rom().len() >= 0x2000 {
+                cartridge.chr_rom()[0..0x2000].to_vec()
+            } else {
+                cartridge.chr_rom().to_vec()
+            };
+            self.ppu.load_chr_rom(chr_bank_0);
+        } else {
+            // Mapper 0: load all CHR-ROM (max 8KB)
+            self.ppu.load_chr_rom(cartridge.chr_rom().to_vec());
+        }
         self.cartridge = Some(cartridge);
     }
     
