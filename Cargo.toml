@@ -9,6 +9,7 @@ members = [
     "crates/feedback-writer",
     "crates/input-handler",
     "lumiemu",
+    "examples/midi2nes",
 ]
 
 [workspace.package]
