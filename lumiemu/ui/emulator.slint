@@ -1,0 +1,95 @@
+import { Button, VerticalBox, HorizontalBox } from "std-widgets.slint";
+
+export component MainWindow inherits Window {
+    title: "LumiEmu - NES Emulator";
+    preferred-width: 800px;
+    preferred-height: 600px;
+    
+    in-out property <image> screen-image;
+    in-out property <string> rom-path: "";
+    in-out property <bool> emulator-running: false;
+    in-out property <string> fps-text: "FPS: 0";
+    
+    callback load-rom();
+    callback start-emulation();
+    callback stop-emulation();
+    callback key-pressed(string);
+    callback key-released(string);
+    
+    VerticalBox {
+        padding: 10px;
+        spacing: 10px;
+        
+        // Menu bar
+        HorizontalBox {
+            spacing: 10px;
+            
+            Button {
+                text: "Load ROM";
+                clicked => { root.load-rom(); }
+            }
+            
+            Button {
+                text: emulator-running ? "Stop" : "Start";
+                enabled: rom-path != "";
+                clicked => {
+                    if (emulator-running) {
+                        root.stop-emulation();
+                    } else {
+                        root.start-emulation();
+                    }
+                }
+            }
+            
+            Text {
+                text: rom-path != "" ? "ROM: " + rom-path : "No ROM loaded";
+                vertical-alignment: center;
+            }
+            
+            Rectangle {
+                horizontal-stretch: 1;
+            }
+            
+            Text {
+                text: fps-text;
+                vertical-alignment: center;
+            }
+        }
+        
+        // Emulator screen
+        Rectangle {
+            border-width: 2px;
+            border-color: #808080;
+            background: #000000;
+            horizontal-stretch: 1;
+            vertical-stretch: 1;
+            
+            Image {
+                source: screen-image;
+                width: 100%;
+                height: 100%;
+                image-fit: contain;
+            }
+        }
+        
+        // Controls info
+        Text {
+            text: "Controls: Arrow Keys = D-Pad | Z = A | X = B | Enter = Start | Shift = Select";
+            font-size: 12px;
+            color: #808080;
+        }
+    }
+    
+    // Keyboard handling
+    FocusScope {
+        key-pressed(event) => {
+            root.key-pressed(event.text);
+            return accept;
+        }
+        
+        key-released(event) => {
+            root.key-released(event.text);
+            return accept;
+        }
+    }
+}

@@ -8,7 +8,6 @@ members = [
     "crates/ai-agent",
     "crates/feedback-writer",
     "crates/input-handler",
-    "crates/ui",
     "lumiemu",
 ]
 
@@ -28,7 +27,6 @@ memory-analyzer = { path = "crates/memory-analyzer" }
 ai-agent = { path = "crates/ai-agent" }
 feedback-writer = { path = "crates/feedback-writer" }
 input-handler = { path = "crates/input-handler" }
-ui = { path = "crates/ui" }
 
 # Emulation core
 bitflags = "2.4"
