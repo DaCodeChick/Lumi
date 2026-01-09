@@ -201,6 +201,11 @@ impl Cartridge {
     /// - 32KB banks switchable
     /// - Bank selected by bits 4-5 of mapper register
     fn read_prg_mapper66(&self, addr: u16) -> u8 {
+        // PRG-ROM is only at $8000-$FFFF
+        if addr < 0x8000 {
+            return 0xFF; // Open bus for $4020-$7FFF
+        }
+        
         let bank = self.mapper_state.prg_bank as usize;
         let offset = (addr - 0x8000) as usize;
         let rom_addr = (bank * 0x8000) + offset;
