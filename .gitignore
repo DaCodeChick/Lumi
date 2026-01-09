@@ -27,6 +27,11 @@ roms/*.smc
 roms/*.sfc
 !roms/.gitkeep
 
+# Generated test ROMs and output files
+/*.nes
+/*.ppm
+/*.png
+
 # ML model weights and checkpoints
 *.pt
 *.pth

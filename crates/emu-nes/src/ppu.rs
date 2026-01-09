@@ -167,6 +167,21 @@ impl Ppu {
         &self.framebuffer
     }
     
+    /// Debug: Read palette RAM directly (for testing)
+    pub fn read_palette_direct(&self, addr: u16) -> u8 {
+        self.palette[(addr & 0x1F) as usize]
+    }
+    
+    /// Debug: Read nametable directly (for testing)
+    pub fn read_nametable_direct(&self, addr: u16) -> u8 {
+        self.read_vram_direct(addr)
+    }
+    
+    /// Debug: Read CHR-ROM directly (for testing)
+    pub fn read_chr_direct(&self, addr: u16) -> u8 {
+        self.chr_rom.get(addr as usize).copied().unwrap_or(0)
+    }
+    
     /// Read from PPU register (CPU memory space $2000-$2007)
     pub fn read_register(&mut self, addr: u16) -> u8 {
         match addr & 0x07 {
@@ -263,7 +278,12 @@ impl Ppu {
             }
             
             // $2007 PPUDATA - write to VRAM
-            7 => self.write_vram(value),
+            7 => {
+                self.write_vram(value);
+                // Auto-increment VRAM address
+                let increment = if self.ctrl.contains(PpuCtrl::VRAM_INCREMENT) { 32 } else { 1 };
+                self.vram_addr = self.vram_addr.wrapping_add(increment);
+            }
             
             _ => unreachable!(),
         }
@@ -335,9 +355,6 @@ impl Ppu {
             
             _ => {}
         }
-        
-        // Increment VRAM address
-        self.increment_vram_addr();
     }
     
     /// Mirror nametable address based on mirroring mode (horizontal for now)
