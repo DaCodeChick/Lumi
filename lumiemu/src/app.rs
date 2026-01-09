@@ -58,6 +58,11 @@ impl AudioSystem {
                         *sample = last_sample;
                     }
                 }
+                
+                // Debug: warn if buffer is running low
+                if buffer.len() < 100 {
+                    // eprintln!("Audio buffer low: {} samples", buffer.len());
+                }
             },
             move |err| {
                 eprintln!("Audio stream error: {}", err);
@@ -65,11 +70,11 @@ impl AudioSystem {
             None,
         )?;
         
-        // Pre-fill buffer with silence (APU default level = -1.0) to prevent initial pop
-        // Fill with about 50ms worth of samples (2205 samples at 44.1kHz)
+        // Pre-fill buffer with a small amount of silence to prevent initial underrun
+        // Just enough to cover the first audio callback (~1-2ms)
         {
             let mut buffer = sample_buffer.lock().unwrap();
-            for _ in 0..2205 {
+            for _ in 0..256 {
                 buffer.push_back(-1.0);
             }
         }
@@ -97,10 +102,21 @@ impl AudioSystem {
         }
     }
     
-    /// Clear audio buffer (to prevent pops when stopping)
-    fn clear_buffer(&self) {
+    /// Fade out audio buffer to prevent pop
+    /// Gradually fades current samples to silence (-1.0)
+    fn fade_out(&self) {
         let mut buffer = self.sample_buffer.lock().unwrap();
+        let fade_samples = 441; // ~10ms fade at 44.1kHz
+        
+        // Clear existing buffer and add fade-out samples
+        let current_level = buffer.back().copied().unwrap_or(-1.0);
         buffer.clear();
+        
+        for i in 0..fade_samples {
+            let t = i as f32 / fade_samples as f32;
+            let sample = current_level * (1.0 - t) + (-1.0) * t;
+            buffer.push_back(sample);
+        }
     }
 }
 
@@ -232,9 +248,9 @@ impl EmulatorApp {
                         let running_lock = running_thread.lock().unwrap();
                         if !*running_lock {
                             println!("Emulation stopped by user");
-                            // Clear audio buffer to prevent pop
+                            // Fade out audio to prevent pop
                             if let Some(ref audio_system) = audio {
-                                audio_system.clear_buffer();
+                                audio_system.fade_out();
                             }
                             break;
                         }
