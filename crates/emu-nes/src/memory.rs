@@ -201,11 +201,17 @@ impl NesMemory {
                 }
             }
             
-            // Cartridge space - writes to ROM are typically ignored
-            // (unless there's mapper registers, which we'll handle later)
+            // Cartridge space - mapper registers
             0x4020..=0xFFFF => {
                 if let Some(ref mut cart) = self.cartridge {
+                    let old_chr_bank = cart.mapper_state.chr_bank;
                     cart.write_prg(addr, value);
+                    
+                    // For Mapper 66: Update PPU CHR bank if it changed
+                    if cart.header().mapper == 66 && cart.mapper_state.chr_bank != old_chr_bank {
+                        let chr_bank = cart.mapper_state.chr_bank as usize;
+                        self.ppu.load_chr_bank(cart.chr_rom(), chr_bank);
+                    }
                 }
             }
             

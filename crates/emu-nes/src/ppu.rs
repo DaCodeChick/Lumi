@@ -162,6 +162,16 @@ impl Ppu {
         self.chr_rom = chr_rom;
     }
     
+    /// Update CHR bank (for mappers with CHR banking)
+    /// Copies 8KB from source at offset to CHR-ROM at address 0x0000
+    pub fn load_chr_bank(&mut self, source: &[u8], bank: usize) {
+        let offset = bank * 0x2000;
+        let len = 0x2000.min(source.len().saturating_sub(offset));
+        if len > 0 && offset < source.len() {
+            self.chr_rom[0..len].copy_from_slice(&source[offset..offset + len]);
+        }
+    }
+    
     /// Get framebuffer reference
     pub fn framebuffer(&self) -> &[u8] {
         &self.framebuffer

@@ -87,6 +87,12 @@ impl AudioSystem {
             }
         }
     }
+    
+    /// Clear audio buffer (to prevent pops when stopping)
+    fn clear_buffer(&self) {
+        let mut buffer = self.sample_buffer.lock().unwrap();
+        buffer.clear();
+    }
 }
 
 pub struct EmulatorApp {
@@ -217,6 +223,10 @@ impl EmulatorApp {
                         let running_lock = running_thread.lock().unwrap();
                         if !*running_lock {
                             println!("Emulation stopped by user");
+                            // Clear audio buffer to prevent pop
+                            if let Some(ref audio_system) = audio {
+                                audio_system.clear_buffer();
+                            }
                             break;
                         }
                     }

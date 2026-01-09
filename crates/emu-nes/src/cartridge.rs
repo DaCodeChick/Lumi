@@ -94,9 +94,9 @@ pub struct Cartridge {
 #[derive(Debug, Default)]
 pub(crate) struct MapperState {
     /// Current PRG bank (for mapper 66)
-    prg_bank: u8,
+    pub(crate) prg_bank: u8,
     /// Current CHR bank (for mapper 66)
-    chr_bank: u8,
+    pub(crate) chr_bank: u8,
 }
 
 impl Cartridge {
