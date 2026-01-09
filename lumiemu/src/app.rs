@@ -154,12 +154,17 @@ impl EmulatorApp {
         window.on_start_emulation(move || {
             println!("Start emulation clicked");
             
-            let emu_lock = emulator_clone.lock().unwrap();
-            if emu_lock.is_none() {
-                println!("No ROM loaded, cannot start");
-                return;
+            // Check if ROM is loaded and reset it
+            {
+                let mut emu_lock = emulator_clone.lock().unwrap();
+                if let Some(ref mut system) = *emu_lock {
+                    system.reset();
+                    println!("Emulator reset - starting from beginning");
+                } else {
+                    println!("No ROM loaded, cannot start");
+                    return;
+                }
             }
-            drop(emu_lock);
 
             // Check if already running
             {
@@ -325,15 +330,25 @@ impl EmulatorApp {
         });
 
         // Stop emulator callback
+        let emulator_clone = emulator.clone();
         let window_weak = window.as_weak();
         let running_clone = running.clone();
         window.on_stop_emulation(move || {
             println!("Stop emulation clicked");
             
-            // Set running flag to false (keeps ROM loaded)
+            // Set running flag to false to stop the emulation thread
             {
                 let mut running_lock = running_clone.lock().unwrap();
                 *running_lock = false;
+            }
+            
+            // Reset the emulator state (so next Start begins fresh)
+            {
+                let mut emu_lock = emulator_clone.lock().unwrap();
+                if let Some(ref mut system) = *emu_lock {
+                    system.reset();
+                    println!("Emulator reset to initial state");
+                }
             }
             
             // Clear the screen and update UI state
@@ -351,7 +366,7 @@ impl EmulatorApp {
                 window.set_screen_image(image);
                 window.set_fps_text("FPS: 0".into());
             }
-            println!("Emulation stopped (ROM still loaded)");
+            println!("Emulation stopped and reset (ROM still loaded)");
         });
 
         // Keyboard press handler
