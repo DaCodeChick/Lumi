@@ -2,11 +2,24 @@
 
 This directory contains example programs demonstrating the LumiEmu NES emulator capabilities.
 
-## Running Examples
+## Quick Start
 
 ```bash
-# From the project root
-cargo run --example <example_name> -p emu-nes
+# CPU test
+cargo run --example generate_test_rom -p emu-nes
+cargo run --example run_test_rom -p emu-nes
+
+# Graphics test
+cargo run --example generate_perfect_visual -p emu-nes
+cargo run --example render_perfect -p emu-nes
+
+# Controller test
+cargo run --example generate_controller_test -p emu-nes
+cargo run --example controller_demo -p emu-nes
+
+# Scrolling test
+cargo run --example generate_scrolling_tests -p emu-nes
+cargo run --example scrolling_compare -p emu-nes
 ```
 
 ## Available Examples
@@ -159,6 +172,49 @@ Shows:
 
 ---
 
+### Scrolling Examples
+
+#### `generate_scrolling_tests.rs`
+Generates two test ROMs to demonstrate scrolling: one with scroll and one without.
+
+```bash
+cargo run --example generate_scrolling_tests -p emu-nes
+```
+
+Creates:
+- `scrolling_test_scroll.nes` - ROM with scroll X=64, Y=32
+- `scrolling_test_noscroll.nes` - ROM with scroll X=0, Y=0
+
+Both ROMs have:
+- Horizontal bands of different tile patterns
+- Tile 1: Solid fill
+- Tile 2: Horizontal stripes
+- Tile 3: Vertical stripes
+- Tile 4: Checkerboard
+
+#### `scrolling_compare.rs`
+Demonstrates scrolling by running both ROMs and generating comparison images.
+
+```bash
+# First generate the test ROMs
+cargo run --example generate_scrolling_tests -p emu-nes
+
+# Then run the comparison
+cargo run --example scrolling_compare -p emu-nes
+```
+
+Creates:
+- `scrolling_noscroll.ppm` - Original position (no scroll)
+- `scrolling_scroll.ppm` - Scrolled by 64 pixels right, 32 pixels down
+
+Shows:
+- Horizontal scrolling using fine_x and coarse_x
+- Vertical scrolling using fine_y and coarse_y
+- How scroll registers affect visible area
+- Same nametable rendered at different positions
+
+---
+
 ## Example Output
 
 ### CPU Test ROM
@@ -211,13 +267,42 @@ Button states read from memory:
 SUCCESS: All button states are correct!
 ```
 
+### Scrolling Comparison
+```
+=== NES Scrolling Comparison Demo ===
+
+Loading no-scroll ROM...
+Loading scrolled ROM...
+Running ROMs to set up...
+
+=== NO SCROLL (X=0, Y=0) ===
+Saved to scrolling_noscroll.ppm
+  Palette usage:
+    $00: 2560 pixels
+    $0F: 43008 pixels
+    $12: 15872 pixels
+
+=== WITH SCROLL (X=64, Y=32) ===
+Saved to scrolling_scroll.ppm
+  Palette usage:
+    $00: 2560 pixels
+    $0F: 43008 pixels
+    $12: 15872 pixels
+
+=== Comparison ===
+View the images to see the scrolling effect:
+  - scrolling_noscroll.ppm: Original position
+  - scrolling_scroll.ppm: Scrolled by 64 pixels right, 32 pixels down
+```
+
 ## Development Workflow
 
 1. **Test CPU functionality**: Run `cpu_demo` and `run_test_rom`
 2. **Test controller input**: Run `generate_controller_test` and `controller_demo`
-3. **Generate visual content**: Run `generate_perfect_visual`
-4. **Verify rendering**: Run `render_perfect` and inspect the output image
-5. **Iterate**: Modify examples or add new ones to test specific features
+3. **Test scrolling**: Run `generate_scrolling_tests` and `scrolling_compare`
+4. **Generate visual content**: Run `generate_perfect_visual`
+5. **Verify rendering**: Run `render_perfect` and inspect the output image
+6. **Iterate**: Modify examples or add new ones to test specific features
 
 ## Notes
 

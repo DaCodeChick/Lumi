@@ -89,7 +89,7 @@ impl NesSystem {
     pub fn run_cycles(&mut self, cycles: u64) -> Result<()> {
         let target = self.cpu.cycles + cycles;
         while self.cpu.cycles < target {
-            self.cpu.step()?;
+            self.step()?;  // Use self.step() instead of cpu.step() to run PPU
         }
         Ok(())
     }

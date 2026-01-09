@@ -455,20 +455,34 @@ impl Ppu {
     
     /// Get background pixel color at screen position (x, y)
     fn get_background_pixel(&self, x: usize, y: usize) -> u8 {
-        // Calculate nametable coordinates
-        let scroll_x = x; // Simplified, should use fine_x and vram_addr
-        let scroll_y = y;
+        // Apply scrolling using temp_vram_addr (set by $2005) and fine_x
+        // temp_vram_addr layout: yyy NN YYYYY XXXXX
+        //   yyy = fine Y (3 bits, pixel offset within tile)
+        //   NN = nametable select (2 bits)
+        //   YYYYY = coarse Y (5 bits, tile row 0-29)
+        //   XXXXX = coarse X (5 bits, tile column 0-31)
         
-        // Get tile coordinates (each tile is 8x8 pixels)
-        let tile_x = scroll_x / 8;
-        let tile_y = scroll_y / 8;
+        // Extract scroll components
+        let coarse_x = (self.temp_vram_addr & 0x001F) as usize;
+        let coarse_y = ((self.temp_vram_addr & 0x03E0) >> 5) as usize;
+        let fine_y = ((self.temp_vram_addr & 0x7000) >> 12) as usize;
+        let nametable_select = ((self.temp_vram_addr & 0x0C00) >> 10) as u16;
+        
+        // Calculate scrolled pixel position
+        // Add current screen position to scroll offset
+        let scroll_x = x + self.fine_x as usize + (coarse_x * 8);
+        let scroll_y = y + fine_y + (coarse_y * 8);
+        
+        // Get tile coordinates
+        let tile_x = (scroll_x / 8) % 32;
+        let tile_y = (scroll_y / 8) % 30;
         
         // Get pixel within tile
         let pixel_x = scroll_x % 8;
         let pixel_y = scroll_y % 8;
         
-        // Get nametable base address from PPUCTRL
-        let nametable_base = 0x2000 | ((self.ctrl.bits() as u16 & 0x03) << 10);
+        // Calculate nametable base (using base nametable from scroll registers)
+        let nametable_base = 0x2000 | (nametable_select << 10);
         
         // Calculate nametable address for this tile
         let tile_addr = nametable_base + (tile_y * 32 + tile_x) as u16;
