@@ -1,12 +1,86 @@
 use std::sync::{Arc, Mutex};
-use std::sync::mpsc::{channel, Sender, Receiver};
+use std::collections::VecDeque;
 use std::thread;
 use std::time::{Duration, Instant};
 use emu_nes::system::NesSystem;
 use emu_core::Button;
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
+use cpal::{Stream, StreamConfig, SampleRate};
 
 slint::include_modules!();
+
+/// Audio sample rate (Hz)
+const SAMPLE_RATE: u32 = 44100;
+
+/// Samples per frame at 60 FPS: 44100 / 60 = 735
+const SAMPLES_PER_FRAME: usize = 735;
+
+/// Audio buffer size (how many samples to buffer)
+const AUDIO_BUFFER_SIZE: usize = 4096;
+
+/// Audio system for playing NES audio
+struct AudioSystem {
+    _stream: Stream,
+    sample_buffer: Arc<Mutex<VecDeque<f32>>>,
+}
+
+impl AudioSystem {
+    fn new() -> Result<Self, Box<dyn std::error::Error>> {
+        let host = cpal::default_host();
+        let device = host.default_output_device()
+            .ok_or("No audio output device available")?;
+        
+        let config = StreamConfig {
+            channels: 1, // Mono
+            sample_rate: SampleRate(SAMPLE_RATE),
+            buffer_size: cpal::BufferSize::Default,
+        };
+        
+        println!("Audio config: {:?}", config);
+        
+        // Shared buffer for audio samples
+        let sample_buffer = Arc::new(Mutex::new(VecDeque::with_capacity(AUDIO_BUFFER_SIZE)));
+        let buffer_clone = sample_buffer.clone();
+        
+        let stream = device.build_output_stream(
+            &config,
+            move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
+                let mut buffer = buffer_clone.lock().unwrap();
+                
+                // Fill output buffer
+                for sample in data.iter_mut() {
+                    *sample = buffer.pop_front().unwrap_or(0.0);
+                }
+            },
+            move |err| {
+                eprintln!("Audio stream error: {}", err);
+            },
+            None,
+        )?;
+        
+        stream.play()?;
+        
+        Ok(Self {
+            _stream: stream,
+            sample_buffer,
+        })
+    }
+    
+    /// Send audio samples to the playback buffer
+    fn send_samples(&self, samples: &[f32]) {
+        let mut buffer = self.sample_buffer.lock().unwrap();
+        
+        // Add samples if buffer has space
+        for &sample in samples {
+            if buffer.len() < AUDIO_BUFFER_SIZE {
+                buffer.push_back(sample);
+            } else {
+                // Buffer full - drop samples to avoid unbounded growth
+                break;
+            }
+        }
+    }
+}
 
 pub struct EmulatorApp {
     window: MainWindow,
@@ -64,7 +138,7 @@ impl EmulatorApp {
             }
         });
 
-        // Start emulator callback
+        // Start emulation callback
         let emulator_clone = emulator.clone();
         let window_weak = window.as_weak();
         window.on_start_emulation(move || {
@@ -89,22 +163,69 @@ impl EmulatorApp {
 
             thread::spawn(move || {
                 println!("Emulation thread started");
+                
+                // Initialize audio in emulation thread (cpal Stream is not Send)
+                let audio = match AudioSystem::new() {
+                    Ok(audio_system) => {
+                        println!("✓ Audio system initialized");
+                        Some(audio_system)
+                    }
+                    Err(e) => {
+                        eprintln!("⚠ Failed to initialize audio: {}", e);
+                        eprintln!("  Continuing without audio...");
+                        None
+                    }
+                };
+                
                 let target_fps = 60.0;
                 let frame_duration = Duration::from_secs_f64(1.0 / target_fps);
                 let mut frame_count = 0;
                 let mut fps_timer = Instant::now();
+                
+                // Audio sampling: collect samples throughout frame execution
+                let mut audio_buffer = Vec::with_capacity(SAMPLES_PER_FRAME);
 
                 loop {
                     let frame_start = Instant::now();
 
-                    // Run one frame and get framebuffer
+                    // Run one frame, collect audio samples, and get framebuffer
                     let (should_continue, rgba_data) = {
                         let mut emu_lock = emulator_thread.lock().unwrap();
                         if let Some(ref mut system) = *emu_lock {
+                            audio_buffer.clear();
+                            
                             // Run for one frame (29780 CPU cycles ≈ 1/60th second)
-                            if let Err(e) = system.run_cycles(29780) {
-                                eprintln!("Emulation error: {:?}", e);
-                                return;
+                            // We need 735 audio samples, so sample every ~40.5 cycles
+                            const CYCLES_PER_FRAME: u64 = 29780;
+                            let cycles_per_sample = CYCLES_PER_FRAME as f64 / SAMPLES_PER_FRAME as f64;
+                            
+                            let mut cycles_run = 0u64;
+                            let mut next_sample_at = 0.0;
+                            
+                            // Run frame in chunks, sampling audio periodically
+                            while cycles_run < CYCLES_PER_FRAME {
+                                // Determine how many cycles to run until next sample
+                                let cycles_to_run = if cycles_run as f64 >= next_sample_at {
+                                    // Time to sample - collect sample and continue
+                                    audio_buffer.push(system.audio_sample());
+                                    next_sample_at += cycles_per_sample;
+                                    1 // Run at least 1 cycle
+                                } else {
+                                    // Run until next sample time
+                                    ((next_sample_at - cycles_run as f64).ceil() as u64).min(CYCLES_PER_FRAME - cycles_run)
+                                };
+                                
+                                if let Err(e) = system.run_cycles(cycles_to_run) {
+                                    eprintln!("Emulation error: {:?}", e);
+                                    return;
+                                }
+                                
+                                cycles_run += cycles_to_run;
+                            }
+                            
+                            // Collect any remaining samples to reach exactly 735
+                            while audio_buffer.len() < SAMPLES_PER_FRAME {
+                                audio_buffer.push(system.audio_sample());
                             }
 
                             // Convert framebuffer to image
@@ -120,6 +241,11 @@ impl EmulatorApp {
 
                     if !should_continue {
                         break;
+                    }
+                    
+                    // Send audio samples to audio thread
+                    if let Some(ref audio_system) = audio {
+                        audio_system.send_samples(&audio_buffer);
                     }
 
                     // Update display on UI thread
