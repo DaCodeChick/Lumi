@@ -323,6 +323,12 @@ impl EmulatorApp {
 
                     // FPS calculation
                     frame_count += 1;
+                    
+                    // Debug: print frame count every 60 frames
+                    if frame_count % 60 == 0 {
+                        println!("Frame {}", frame_count);
+                    }
+                    
                     if fps_timer.elapsed() >= Duration::from_secs(1) {
                         let fps = frame_count;
                         let window_weak_fps = window_weak_clone.clone();

@@ -23,6 +23,11 @@ impl NesSystem {
         
         // Check mapper support
         let mapper = cartridge.header().mapper;
+        println!("Loading ROM: mapper={}, PRG={}KB, CHR={}KB", 
+                 mapper, 
+                 cartridge.prg_rom().len() / 1024,
+                 cartridge.chr_rom().len() / 1024);
+        
         if mapper != 0 && mapper != 66 {
             return Err(EmulatorError::UnsupportedMapper(mapper));
         }
@@ -36,6 +41,8 @@ impl NesSystem {
         
         // Reset CPU (this will read the reset vector from $FFFC-$FFFD)
         cpu.reset();
+        
+        println!("CPU reset to PC=${:04X}", cpu.pc);
         
         Ok(Self {
             cpu,
