@@ -13,6 +13,7 @@
 /// Cartridge memory will be handled by the Cartridge module.
 
 use crate::cpu::CpuMemory;
+use crate::cartridge::Cartridge;
 use emu_core::{MemoryBus, MemoryObserver, EmulatorContext};
 
 /// NES Memory system
@@ -26,9 +27,8 @@ pub struct NesMemory {
     /// APU/IO register values (stubbed for now)
     apu_io_regs: [u8; 0x18],
     
-    /// Cartridge reference (optional, for now)
-    /// In the future, this will be a trait object for different mappers
-    cartridge_prg: Option<Vec<u8>>,
+    /// Cartridge (optional)
+    cartridge: Option<Cartridge>,
     
     /// Memory observers for AI pattern detection
     observers: Vec<Box<dyn MemoryObserver>>,
@@ -44,7 +44,7 @@ impl NesMemory {
             ram: [0; 0x0800],
             ppu_regs: [0; 8],
             apu_io_regs: [0; 0x18],
-            cartridge_prg: None,
+            cartridge: None,
             observers: Vec::new(),
             context: EmulatorContext {
                 frame: 0,
@@ -55,9 +55,27 @@ impl NesMemory {
         }
     }
     
-    /// Load PRG-ROM data (temporary, will be replaced with proper cartridge system)
+    /// Load a cartridge
+    pub fn load_cartridge(&mut self, cartridge: Cartridge) {
+        self.cartridge = Some(cartridge);
+    }
+    
+    /// Load PRG-ROM data directly (for testing, bypasses cartridge system)
     pub fn load_prg_rom(&mut self, data: Vec<u8>) {
-        self.cartridge_prg = Some(data);
+        // Create a fake cartridge for testing
+        let fake_cart = Cartridge {
+            prg_rom: data,
+            chr_rom: vec![0; 0x2000],
+            header: crate::cartridge::INesHeader {
+                prg_rom_banks: 1,
+                chr_rom_banks: 1,
+                mapper: 0,
+                mirroring: crate::cartridge::Mirroring::Horizontal,
+                has_battery: false,
+                has_trainer: false,
+            },
+        };
+        self.cartridge = Some(fake_cart);
     }
     
     /// Internal read without observer notification
@@ -83,21 +101,8 @@ impl NesMemory {
             
             // Cartridge space
             0x4020..=0xFFFF => {
-                if let Some(ref prg) = self.cartridge_prg {
-                    // Simple mapper 0 (NROM): 16KB or 32KB PRG-ROM
-                    let rom_addr = if prg.len() <= 0x4000 {
-                        // 16KB ROM: mirror at $C000
-                        (addr & 0x3FFF) as usize
-                    } else {
-                        // 32KB ROM: linear mapping
-                        (addr - 0x8000) as usize
-                    };
-                    
-                    if rom_addr < prg.len() {
-                        prg[rom_addr]
-                    } else {
-                        0xFF // Open bus
-                    }
+                if let Some(ref cart) = self.cartridge {
+                    cart.read_prg(addr)
                 } else {
                     0xFF // No cartridge loaded
                 }
@@ -131,9 +136,11 @@ impl NesMemory {
             }
             
             // Cartridge space - writes to ROM are typically ignored
-            // (unless there's RAM or mapper registers, which we'll handle later)
+            // (unless there's mapper registers, which we'll handle later)
             0x4020..=0xFFFF => {
-                // Ignore writes to ROM for now
+                if let Some(ref mut cart) = self.cartridge {
+                    cart.write_prg(addr, value);
+                }
             }
             
             _ => {
