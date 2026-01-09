@@ -12,6 +12,8 @@ emu-nes = { workspace = true }
 emu-core = { workspace = true }
 native-dialog = "0.7"
 cpal = "0.15"
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
 
 [build-dependencies]
 slint-build = "1.5"

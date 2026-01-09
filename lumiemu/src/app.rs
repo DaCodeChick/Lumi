@@ -8,6 +8,7 @@ use emu_nes::system::NesSystem;
 use emu_core::Button;
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::{Stream, StreamConfig, SampleRate};
+use tracing::trace;
 
 slint::include_modules!();
 
@@ -326,9 +327,9 @@ impl EmulatorApp {
                     // FPS calculation
                     frame_count += 1;
                     
-                    // Debug: print frame count every 60 frames
+                    // Debug: log frame count every 60 frames
                     if frame_count % 60 == 0 {
-                        println!("Frame {}", frame_count);
+                        trace!("Frame {}", frame_count);
                     }
                     
                     if fps_timer.elapsed() >= Duration::from_secs(1) {

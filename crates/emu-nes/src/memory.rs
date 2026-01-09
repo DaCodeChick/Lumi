@@ -17,6 +17,7 @@ use crate::cpu::CpuMemory;
 use crate::cartridge::Cartridge;
 use crate::ppu::Ppu;
 use emu_core::{Controller, MemoryBus, MemoryObserver, EmulatorContext};
+use tracing::trace;
 
 /// NES Memory system
 pub struct NesMemory {
@@ -224,11 +225,11 @@ impl NesMemory {
                     if cart.header().mapper == 66 {
                         if cart.mapper_state.chr_bank != old_chr_bank {
                             let chr_bank = cart.mapper_state.chr_bank as usize;
-                            println!("Mapper 66: CHR bank changed to {} (value=${:02X} at ${:04X})", chr_bank, value, addr);
+                            trace!("Mapper 66: CHR bank changed to {} (value=${:02X} at ${:04X})", chr_bank, value, addr);
                             self.ppu.load_chr_bank(cart.chr_rom(), chr_bank);
                         }
                         if cart.mapper_state.prg_bank != old_prg_bank {
-                            println!("Mapper 66: PRG bank changed to {} (value=${:02X} at ${:04X})", cart.mapper_state.prg_bank, value, addr);
+                            trace!("Mapper 66: PRG bank changed to {} (value=${:02X} at ${:04X})", cart.mapper_state.prg_bank, value, addr);
                         }
                     }
                 }

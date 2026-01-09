@@ -6,6 +6,7 @@ use crate::{Cartridge, Cpu6502, NesMemory};
 use crate::cpu::CpuMemory;
 use emu_core::{Button, Controller, Cpu, EmulatorError, Result};
 use std::path::Path;
+use tracing::debug;
 
 /// NES Emulator System
 pub struct NesSystem {
@@ -23,7 +24,7 @@ impl NesSystem {
         
         // Check mapper support
         let mapper = cartridge.header().mapper;
-        println!("Loading ROM: mapper={}, PRG={}KB, CHR={}KB", 
+        debug!("Loading ROM: mapper={}, PRG={}KB, CHR={}KB", 
                  mapper, 
                  cartridge.prg_rom().len() / 1024,
                  cartridge.chr_rom().len() / 1024);
@@ -42,7 +43,7 @@ impl NesSystem {
         // Reset CPU (this will read the reset vector from $FFFC-$FFFD)
         cpu.reset();
         
-        println!("CPU reset to PC=${:04X}", cpu.pc);
+        debug!("CPU reset to PC=${:04X}", cpu.pc);
         
         Ok(Self {
             cpu,
