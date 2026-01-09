@@ -3,7 +3,7 @@ use emu_nes::system::NesSystem;
 use std::path::Path;
 
 fn main() {
-    let rom_path = Path::new("scrolling_test_noscroll.nes");
+    let rom_path = Path::new("animation_test.nes");
     
     println!("Loading ROM: {:?}", rom_path);
     let mut system = match NesSystem::new(rom_path) {
@@ -13,7 +13,18 @@ fn main() {
         }
         Err(e) => {
             eprintln!("✗ Failed to load ROM: {:?}", e);
-            return;
+            eprintln!("  Trying scrolling_test_noscroll.nes instead...");
+            let rom_path = Path::new("scrolling_test_noscroll.nes");
+            match NesSystem::new(rom_path) {
+                Ok(s) => {
+                    println!("✓ ROM loaded successfully");
+                    s
+                }
+                Err(e) => {
+                    eprintln!("✗ Failed: {:?}", e);
+                    return;
+                }
+            }
         }
     };
     

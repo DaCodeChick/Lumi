@@ -157,10 +157,21 @@ impl EmulatorApp {
 
                 println!("Emulation thread ended");
                 
-                // Clear running state when stopped
+                // Clear screen and running state when stopped
                 slint::invoke_from_event_loop(move || {
                     if let Some(window) = window_weak_clone.upgrade() {
                         window.set_emulator_running(false);
+                        window.set_fps_text("FPS: 0".into());
+                        
+                        // Create a black screen
+                        let black_screen = vec![0u8; 256 * 240 * 4];
+                        let buffer = slint::SharedPixelBuffer::clone_from_slice(
+                            &black_screen,
+                            256,
+                            240,
+                        );
+                        let image = slint::Image::from_rgba8(buffer);
+                        window.set_screen_image(image);
                     }
                 }).ok();
             });
@@ -174,9 +185,20 @@ impl EmulatorApp {
             let mut emu_lock = emulator_clone.lock().unwrap();
             *emu_lock = None;
             
-            // Update UI state immediately
+            // Clear the screen and update UI state
             if let Some(window) = window_weak.upgrade() {
                 window.set_emulator_running(false);
+                
+                // Create a black screen
+                let black_screen = vec![0u8; 256 * 240 * 4]; // All black pixels (RGBA)
+                let buffer = slint::SharedPixelBuffer::clone_from_slice(
+                    &black_screen,
+                    256,
+                    240,
+                );
+                let image = slint::Image::from_rgba8(buffer);
+                window.set_screen_image(image);
+                window.set_fps_text("FPS: 0".into());
             }
             println!("Emulation stopped");
         });
