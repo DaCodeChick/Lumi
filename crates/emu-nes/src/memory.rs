@@ -116,6 +116,7 @@ impl NesMemory {
                 has_battery: false,
                 has_trainer: false,
             },
+            mapper_state: Default::default(),
         };
         self.cartridge = Some(fake_cart);
     }

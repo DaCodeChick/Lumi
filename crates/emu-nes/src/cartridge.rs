@@ -86,6 +86,17 @@ pub struct Cartridge {
     pub(crate) chr_rom: Vec<u8>,
     /// Cartridge header
     pub(crate) header: INesHeader,
+    /// Mapper state (for banking)
+    pub(crate) mapper_state: MapperState,
+}
+
+/// Mapper-specific state
+#[derive(Debug, Default)]
+pub(crate) struct MapperState {
+    /// Current PRG bank (for mapper 66)
+    prg_bank: u8,
+    /// Current CHR bank (for mapper 66)
+    chr_bank: u8,
 }
 
 impl Cartridge {
@@ -130,6 +141,7 @@ impl Cartridge {
             prg_rom,
             chr_rom,
             header,
+            mapper_state: MapperState::default(),
         })
     }
     
@@ -154,10 +166,11 @@ impl Cartridge {
     }
     
     /// Read from PRG-ROM address space ($8000-$FFFF)
-    /// Implements Mapper 0 (NROM) logic
+    /// Implements Mapper 0 (NROM) and Mapper 66 (GxROM) logic
     pub fn read_prg(&self, addr: u16) -> u8 {
         match self.header.mapper {
             0 => self.read_prg_mapper0(addr),
+            66 => self.read_prg_mapper66(addr),
             _ => {
                 // Unsupported mapper - return open bus
                 0xFF
@@ -184,10 +197,97 @@ impl Cartridge {
         }
     }
     
-    /// Write to PRG address space (usually ignored, but some mappers use this for banking)
-    pub fn write_prg(&mut self, _addr: u16, _value: u8) {
-        // Mapper 0 has no writable registers
-        // In the future, other mappers will handle banking here
+    /// Mapper 66 (GxROM) PRG-ROM read
+    /// - 32KB banks switchable
+    /// - Bank selected by bits 4-5 of mapper register
+    fn read_prg_mapper66(&self, addr: u16) -> u8 {
+        let bank = self.mapper_state.prg_bank as usize;
+        let offset = (addr - 0x8000) as usize;
+        let rom_addr = (bank * 0x8000) + offset;
+        
+        if rom_addr < self.prg_rom.len() {
+            self.prg_rom[rom_addr]
+        } else {
+            0xFF
+        }
+    }
+    
+    /// Write to PRG address space (for mapper register updates)
+    pub fn write_prg(&mut self, addr: u16, value: u8) {
+        match self.header.mapper {
+            0 => {
+                // Mapper 0 has no writable registers
+            }
+            66 => self.write_prg_mapper66(addr, value),
+            _ => {}
+        }
+    }
+    
+    /// Mapper 66 (GxROM) register write
+    /// Write to $8000-$FFFF sets banking
+    /// Bits 4-5: PRG bank (0-3)
+    /// Bits 0-1: CHR bank (0-3)
+    fn write_prg_mapper66(&mut self, _addr: u16, value: u8) {
+        self.mapper_state.prg_bank = (value >> 4) & 0x03;
+        self.mapper_state.chr_bank = value & 0x03;
+    }
+    
+    /// Read from CHR-ROM/RAM address space ($0000-$1FFF)
+    /// Used by PPU for pattern tables
+    pub fn read_chr(&self, addr: u16) -> u8 {
+        match self.header.mapper {
+            0 => {
+                // Mapper 0: direct access
+                let addr = addr as usize;
+                if addr < self.chr_rom.len() {
+                    self.chr_rom[addr]
+                } else {
+                    0
+                }
+            }
+            66 => {
+                // Mapper 66: 8KB banks
+                let bank = self.mapper_state.chr_bank as usize;
+                let offset = addr as usize;
+                let chr_addr = (bank * 0x2000) + offset;
+                
+                if chr_addr < self.chr_rom.len() {
+                    self.chr_rom[chr_addr]
+                } else {
+                    0
+                }
+            }
+            _ => 0,
+        }
+    }
+    
+    /// Write to CHR-ROM/RAM address space ($0000-$1FFF)
+    /// Only works for CHR-RAM (when chr_rom_banks == 0)
+    pub fn write_chr(&mut self, addr: u16, value: u8) {
+        match self.header.mapper {
+            0 => {
+                // Mapper 0: direct access if CHR-RAM
+                if self.header.chr_rom_banks == 0 {
+                    let addr = addr as usize;
+                    if addr < self.chr_rom.len() {
+                        self.chr_rom[addr] = value;
+                    }
+                }
+            }
+            66 => {
+                // Mapper 66: CHR-RAM write through bank
+                if self.header.chr_rom_banks == 0 {
+                    let bank = self.mapper_state.chr_bank as usize;
+                    let offset = addr as usize;
+                    let chr_addr = (bank * 0x2000) + offset;
+                    
+                    if chr_addr < self.chr_rom.len() {
+                        self.chr_rom[chr_addr] = value;
+                    }
+                }
+            }
+            _ => {}
+        }
     }
 }
 

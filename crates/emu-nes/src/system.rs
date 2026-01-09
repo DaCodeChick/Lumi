@@ -22,8 +22,9 @@ impl NesSystem {
         let cartridge = Cartridge::load(rom_path)?;
         
         // Check mapper support
-        if cartridge.header().mapper != 0 {
-            return Err(EmulatorError::UnsupportedMapper(cartridge.header().mapper));
+        let mapper = cartridge.header().mapper;
+        if mapper != 0 && mapper != 66 {
+            return Err(EmulatorError::UnsupportedMapper(mapper));
         }
         
         // Create memory system and load cartridge
