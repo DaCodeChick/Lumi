@@ -1,4 +1,33 @@
-import { Button, VerticalBox, HorizontalBox } from "std-widgets.slint";
+import { Button, VerticalBox, HorizontalBox, ScrollView } from "std-widgets.slint";
+
+export component MemoryViewer inherits Window {
+    title: "Memory Viewer";
+    preferred-width: 600px;
+    preferred-height: 500px;
+    
+    in-out property <string> memory-text: "";
+    
+    VerticalBox {
+        padding: 10px;
+        
+        Text {
+            text: "NES Memory ($0000-$FFFF)";
+            font-size: 14px;
+            font-weight: 700;
+        }
+        
+        ScrollView {
+            vertical-stretch: 1;
+            
+            Text {
+                text: memory-text;
+                font-family: "monospace";
+                font-size: 11px;
+                wrap: no-wrap;
+            }
+        }
+    }
+}
 
 export component MainWindow inherits Window {
     title: "LumiEmu - NES Emulator";
@@ -15,6 +44,7 @@ export component MainWindow inherits Window {
     callback stop-emulation();
     callback key-pressed(string);
     callback key-released(string);
+    callback open-memory-viewer();
     
     // Keyboard handling at window level
     forward-focus: focus-scope;
@@ -54,6 +84,14 @@ export component MainWindow inherits Window {
                         } else {
                             root.start-emulation();
                         }
+                    }
+                }
+                
+                Button {
+                    text: "Memory Viewer";
+                    enabled: rom-path != "";
+                    clicked => {
+                        root.open-memory-viewer();
                     }
                 }
                 

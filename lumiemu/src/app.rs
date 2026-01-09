@@ -451,6 +451,83 @@ impl EmulatorApp {
                 }
             }
         });
+        
+        // Memory viewer callback
+        let emulator_clone = emulator.clone();
+        window.on_open_memory_viewer(move || {
+            println!("Opening memory viewer");
+            
+            // Create memory viewer window
+            let viewer = MemoryViewer::new().unwrap();
+            let viewer_weak = viewer.as_weak();
+            let emulator_viewer = emulator_clone.clone();
+            
+            // Set up a timer to update memory view
+            let timer = slint::Timer::default();
+            timer.start(slint::TimerMode::Repeated, std::time::Duration::from_millis(100), move || {
+                let mut emu_lock = emulator_viewer.lock().unwrap();
+                if let Some(ref mut system) = *emu_lock {
+                    let memory_text = Self::format_memory_dump(system);
+                    if let Some(v) = viewer_weak.upgrade() {
+                        v.set_memory_text(memory_text.into());
+                    }
+                }
+            });
+            
+            viewer.show().unwrap();
+        });
+    }
+    
+    /// Format memory as hex dump
+    fn format_memory_dump(system: &mut NesSystem) -> String {
+        let mut output = String::with_capacity(80 * 256); // ~20KB pre-allocated
+        
+        // Show key memory regions
+        let regions = [
+            (0x0000, 0x0800, "RAM"),
+            (0x2000, 0x2008, "PPU Registers"),
+            (0x4000, 0x4018, "APU & I/O"),
+            (0x6000, 0x6100, "PRG-RAM (first 256 bytes)"),
+            (0x8000, 0x8100, "PRG-ROM (first 256 bytes)"),
+            (0xFFFA, 0x10000, "Interrupt Vectors"),
+        ];
+        
+        for (start, end, name) in regions {
+            output.push_str(&format!("\n=== {} (${}:{}) ===\n", name, format!("{:04X}", start), format!("{:04X}", end - 1)));
+            
+            for addr in (start..end).step_by(16) {
+                output.push_str(&format!("{:04X}: ", addr));
+                
+                // Hex bytes
+                for i in 0..16 {
+                    if addr + i < end {
+                        let byte = system.read_memory((addr + i) as u16);
+                        output.push_str(&format!("{:02X} ", byte));
+                    } else {
+                        output.push_str("   ");
+                    }
+                }
+                
+                output.push_str(" | ");
+                
+                // ASCII representation
+                for i in 0..16 {
+                    if addr + i < end {
+                        let byte = system.read_memory((addr + i) as u16);
+                        let ch = if byte >= 32 && byte < 127 {
+                            byte as char
+                        } else {
+                            '.'
+                        };
+                        output.push(ch);
+                    }
+                }
+                
+                output.push('\n');
+            }
+        }
+        
+        output
     }
 
     fn framebuffer_to_rgba(framebuffer: &[u8]) -> Vec<u8> {
