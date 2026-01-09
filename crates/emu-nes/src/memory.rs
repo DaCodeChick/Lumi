@@ -14,6 +14,7 @@
 
 use crate::cpu::CpuMemory;
 use crate::cartridge::Cartridge;
+use crate::ppu::Ppu;
 use emu_core::{MemoryBus, MemoryObserver, EmulatorContext};
 
 /// NES Memory system
@@ -21,8 +22,8 @@ pub struct NesMemory {
     /// 2KB of internal RAM ($0000-$07FF, mirrored to $1FFF)
     ram: [u8; 0x0800],
     
-    /// PPU register values (for now just storage, no real PPU yet)
-    ppu_regs: [u8; 8],
+    /// PPU (handles $2000-$2007 registers)
+    ppu: Ppu,
     
     /// APU/IO register values (stubbed for now)
     apu_io_regs: [u8; 0x18],
@@ -42,7 +43,7 @@ impl NesMemory {
     pub fn new() -> Self {
         Self {
             ram: [0; 0x0800],
-            ppu_regs: [0; 8],
+            ppu: Ppu::new(),
             apu_io_regs: [0; 0x18],
             cartridge: None,
             observers: Vec::new(),
@@ -55,8 +56,20 @@ impl NesMemory {
         }
     }
     
+    /// Get PPU reference
+    pub fn ppu(&self) -> &Ppu {
+        &self.ppu
+    }
+    
+    /// Get mutable PPU reference
+    pub fn ppu_mut(&mut self) -> &mut Ppu {
+        &mut self.ppu
+    }
+    
     /// Load a cartridge
     pub fn load_cartridge(&mut self, cartridge: Cartridge) {
+        // Load CHR-ROM into PPU
+        self.ppu.load_chr_rom(cartridge.chr_rom().to_vec());
         self.cartridge = Some(cartridge);
     }
     
@@ -89,8 +102,7 @@ impl NesMemory {
             
             // PPU registers (mirrored every 8 bytes)
             0x2000..=0x3FFF => {
-                let reg = (addr & 0x0007) as usize;
-                self.ppu_regs[reg]
+                self.ppu.read_register(addr)
             }
             
             // APU and I/O registers
@@ -123,9 +135,7 @@ impl NesMemory {
             
             // PPU registers (mirrored every 8 bytes)
             0x2000..=0x3FFF => {
-                let reg = (addr & 0x0007) as usize;
-                self.ppu_regs[reg] = value;
-                // TODO: Actually communicate with PPU
+                self.ppu.write_register(addr, value);
             }
             
             // APU and I/O registers
@@ -249,15 +259,13 @@ mod tests {
         let mut mem = NesMemory::new();
         
         // PPU has 8 registers, mirrored throughout $2000-$3FFF
-        CpuMemory::write(&mut mem, 0x2000, 0x42);
-        assert_eq!(CpuMemory::read(&mut mem, 0x2000), 0x42);
-        assert_eq!(CpuMemory::read(&mut mem, 0x2008), 0x42);
-        assert_eq!(CpuMemory::read(&mut mem, 0x3000), 0x42);
-        
-        CpuMemory::write(&mut mem, 0x2007, 0x99);
-        assert_eq!(CpuMemory::read(&mut mem, 0x2007), 0x99);
-        assert_eq!(CpuMemory::read(&mut mem, 0x200F), 0x99);
-        assert_eq!(CpuMemory::read(&mut mem, 0x3FFF), 0x99);
+        // Test with $2004 (OAMDATA) which is read/write
+        CpuMemory::write(&mut mem, 0x2003, 0x00); // Set OAMADDR to 0
+        CpuMemory::write(&mut mem, 0x2004, 0x42); // Write to OAM
+        CpuMemory::write(&mut mem, 0x2003, 0x00); // Reset OAMADDR
+        assert_eq!(CpuMemory::read(&mut mem, 0x2004), 0x42); // Read from $2004
+        assert_eq!(CpuMemory::read(&mut mem, 0x200C), 0x42); // Mirror at $200C
+        assert_eq!(CpuMemory::read(&mut mem, 0x3004), 0x42); // Mirror at $3004
     }
     
     #[test]

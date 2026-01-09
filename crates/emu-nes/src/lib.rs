@@ -6,9 +6,11 @@
 pub mod cartridge;
 pub mod cpu;
 pub mod memory;
+pub mod ppu;
 pub mod system;
 
 pub use cartridge::Cartridge;
 pub use cpu::Cpu6502;
 pub use memory::NesMemory;
+pub use ppu::Ppu;
 pub use system::NesSystem;

@@ -64,7 +64,20 @@ impl NesSystem {
     
     /// Step one CPU instruction
     pub fn step(&mut self) -> Result<u8> {
-        self.cpu.step()
+        let cycles = self.cpu.step()?;
+        
+        // PPU runs 3x faster than CPU
+        for _ in 0..(cycles * 3) {
+            self.cpu.memory().ppu_mut().tick();
+            
+            // Check for NMI interrupt
+            if self.cpu.memory().ppu().nmi_interrupt {
+                self.cpu.memory().ppu_mut().nmi_interrupt = false;
+                self.cpu.nmi();
+            }
+        }
+        
+        Ok(cycles)
     }
     
     /// Run for a specified number of cycles
@@ -104,9 +117,14 @@ impl NesSystem {
         self.cpu.memory().read(addr)
     }
     
-    /// Write to memory
-    pub fn write_memory(&mut self, addr: u16, value: u8) {
-        self.cpu.memory().write(addr, value)
+    /// Get framebuffer from PPU
+    pub fn framebuffer(&mut self) -> &[u8] {
+        self.cpu.memory().ppu().framebuffer()
+    }
+    
+    /// Get PPU reference
+    pub fn ppu(&mut self) -> &crate::ppu::Ppu {
+        self.cpu.memory().ppu()
     }
 }
 

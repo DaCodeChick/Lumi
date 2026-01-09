@@ -229,6 +229,22 @@ impl<M: CpuMemory> Cpu6502<M> {
         let page_crossed = (base & 0xFF00) != (addr & 0xFF00);
         (addr, page_crossed)
     }
+    
+    /// Trigger NMI (Non-Maskable Interrupt)
+    pub fn nmi(&mut self) {
+        // Push PC and status to stack
+        self.push_word(self.pc);
+        self.push(self.status.bits() & !StatusFlags::BREAK.bits() | StatusFlags::UNUSED.bits());
+        
+        // Set interrupt disable flag
+        self.set_flag(StatusFlags::INTERRUPT, true);
+        
+        // Load NMI vector from $FFFA-$FFFB
+        self.pc = self.memory.read_word(0xFFFA);
+        
+        // NMI takes 7 cycles
+        self.cycles += 7;
+    }
 }
 
 impl<M: CpuMemory> CpuTrait for Cpu6502<M> {
