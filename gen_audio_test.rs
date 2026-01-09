@@ -75,21 +75,21 @@ fn main() {
     prg[pc - 0xC000 + 2] = 0x40;
     pc += 3;
     
-    // Timer high byte + length counter
-    prg[pc - 0xC000] = 0xA9; // LDA #$00 (timer_high=0, length=10)
-    prg[pc - 0xC000 + 1] = 0x00;
-    pc += 2;
-    prg[pc - 0xC000] = 0x8D; // STA $4003
-    prg[pc - 0xC000 + 1] = 0x03;
-    prg[pc - 0xC000 + 2] = 0x40;
-    pc += 3;
-    
-    // Enable Pulse 1
+    // Enable Pulse 1 FIRST (before writing $4003)
     prg[pc - 0xC000] = 0xA9; // LDA #$01
     prg[pc - 0xC000 + 1] = 0x01;
     pc += 2;
     prg[pc - 0xC000] = 0x8D; // STA $4015
     prg[pc - 0xC000 + 1] = 0x15;
+    prg[pc - 0xC000 + 2] = 0x40;
+    pc += 3;
+    
+    // Timer high byte + length counter (AFTER enabling channel)
+    prg[pc - 0xC000] = 0xA9; // LDA #$00 (timer_high=0, length=10)
+    prg[pc - 0xC000 + 1] = 0x00;
+    pc += 2;
+    prg[pc - 0xC000] = 0x8D; // STA $4003
+    prg[pc - 0xC000 + 1] = 0x03;
     prg[pc - 0xC000 + 2] = 0x40;
     pc += 3;
     
