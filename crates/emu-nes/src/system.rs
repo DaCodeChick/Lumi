@@ -72,13 +72,20 @@ impl NesSystem {
         let cycles = self.cpu.step()?;
         
         // PPU runs 3x faster than CPU
-        for _ in 0..(cycles * 3) {
-            self.cpu.memory().ppu_mut().tick();
+        // APU runs at CPU speed
+        for _ in 0..cycles {
+            // Clock APU once per CPU cycle
+            self.cpu.memory().apu_mut().clock();
             
-            // Check for NMI interrupt
-            if self.cpu.memory().ppu().nmi_interrupt {
-                self.cpu.memory().ppu_mut().nmi_interrupt = false;
-                self.cpu.nmi();
+            // Clock PPU 3 times per CPU cycle
+            for _ in 0..3 {
+                self.cpu.memory().ppu_mut().tick();
+                
+                // Check for NMI interrupt
+                if self.cpu.memory().ppu().nmi_interrupt {
+                    self.cpu.memory().ppu_mut().nmi_interrupt = false;
+                    self.cpu.nmi();
+                }
             }
         }
         
@@ -130,6 +137,17 @@ impl NesSystem {
     /// Get PPU reference
     pub fn ppu(&mut self) -> &crate::ppu::Ppu {
         self.cpu.memory().ppu()
+    }
+    
+    /// Get APU reference
+    pub fn apu(&mut self) -> &crate::apu::Apu {
+        self.cpu.memory().apu()
+    }
+    
+    /// Get current audio sample from APU
+    /// Returns a float in range [-1.0, 1.0]
+    pub fn audio_sample(&mut self) -> f32 {
+        self.cpu.memory().apu().output()
     }
     
     /// Get controller 1 reference

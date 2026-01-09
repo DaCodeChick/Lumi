@@ -1,8 +1,10 @@
 use std::sync::{Arc, Mutex};
+use std::sync::mpsc::{channel, Sender, Receiver};
 use std::thread;
 use std::time::{Duration, Instant};
 use emu_nes::system::NesSystem;
 use emu_core::Button;
+use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 
 slint::include_modules!();
 
