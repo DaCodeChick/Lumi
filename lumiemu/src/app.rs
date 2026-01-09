@@ -46,7 +46,7 @@ impl AudioSystem {
             &config,
             move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
                 let mut buffer = buffer_clone.lock().unwrap();
-                let mut last_sample = 0.0;
+                let mut last_sample = -1.0; // APU silence level
                 
                 // Fill output buffer
                 for sample in data.iter_mut() {
@@ -64,6 +64,15 @@ impl AudioSystem {
             },
             None,
         )?;
+        
+        // Pre-fill buffer with silence (APU default level = -1.0) to prevent initial pop
+        // Fill with about 50ms worth of samples (2205 samples at 44.1kHz)
+        {
+            let mut buffer = sample_buffer.lock().unwrap();
+            for _ in 0..2205 {
+                buffer.push_back(-1.0);
+            }
+        }
         
         stream.play()?;
         
